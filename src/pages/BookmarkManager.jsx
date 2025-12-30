@@ -18,6 +18,9 @@ import {
   Square,
   ArrowUpDown,
   Archive,
+  Edit,
+  Save,
+  X,
 } from "lucide-react";
 import { useLayout } from "../contexts/LayoutContext";
 import { getLayoutStyles } from "../utils/layoutUtils";
@@ -37,6 +40,9 @@ export default function BookmarkManager() {
   const { layoutDensity } = useLayout();
   const layout = getLayoutStyles(layoutDensity);
 
+  // Maximum undo stack size to prevent memory issues
+  const MAX_UNDO_STACK = 50;
+
   const [bookmarks, setBookmarks] = useState([]);
   const [url, setUrl] = useState("");
   const [tags, setTags] = useState("");
@@ -50,6 +56,13 @@ export default function BookmarkManager() {
   const [undoStack, setUndoStack] = useState([]);
   const [selectedBookmarks, setSelectedBookmarks] = useState(new Set());
   const [sortBy, setSortBy] = useState("date-desc"); // date-desc, date-asc, title-asc, title-desc
+  const [editingBookmark, setEditingBookmark] = useState(null);
+  const [editForm, setEditForm] = useState({
+    url: "",
+    tags: "",
+    directory: "",
+    title: "",
+  });
 
   useEffect(() => {
     try {
@@ -71,7 +84,13 @@ export default function BookmarkManager() {
       setDirectories(savedDirs);
     } catch (error) {
       console.error("Failed to load data:", error);
-      setErrorMessage("Failed to load data. Starting fresh.");
+      if (error.message && error.message.includes("localStorage")) {
+        setErrorMessage(
+          "localStorage is disabled or unavailable. Data cannot be saved. Please enable cookies/storage in your browser."
+        );
+      } else {
+        setErrorMessage("Failed to load data. Starting fresh.");
+      }
       setBookmarks([]);
       setDirectories(["Unsorted"]);
     }
@@ -93,6 +112,11 @@ export default function BookmarkManager() {
     }
   }, [directories]);
 
+  // Clear selection when filter changes
+  useEffect(() => {
+    setSelectedBookmarks(new Set());
+  }, [filter]);
+
   const addBookmark = async () => {
     if (!url.trim()) return;
 
@@ -102,6 +126,18 @@ export default function BookmarkManager() {
     try {
       // Validate and sanitize URL
       const validatedURL = validateAndSanitizeURL(url);
+
+      // Check for duplicate URL
+      const existingBookmark = bookmarks.find((b) => b.url === validatedURL);
+      if (existingBookmark) {
+        const shouldAdd = window.confirm(
+          `A bookmark with this URL already exists:\n"${existingBookmark.title}"\n\nAdd anyway?`
+        );
+        if (!shouldAdd) {
+          setLoading(false);
+          return;
+        }
+      }
 
       // Parse and validate tags
       const validatedTags = parseAndValidateTags(tags);
@@ -147,12 +183,17 @@ export default function BookmarkManager() {
 
           if (title && title.trim()) {
             const sanitizedTitle = sanitizeTitle(title.trim());
-            // Update bookmark with fetched title
-            setBookmarks((prev) =>
-              prev.map((b) =>
+            // Update bookmark with fetched title only if it still exists
+            setBookmarks((prev) => {
+              const bookmark = prev.find((b) => b.id === bookmarkId);
+              if (!bookmark) {
+                // Bookmark was deleted, don't update
+                return prev;
+              }
+              return prev.map((b) =>
                 b.id === bookmarkId ? { ...b, title: sanitizedTitle } : b
-              )
-            );
+              );
+            });
           }
         } catch (error) {
           if (retries > 0) {
@@ -180,8 +221,12 @@ export default function BookmarkManager() {
         `Are you sure you want to delete "${bookmark.title}"? You can undo this action.`
       )
     ) {
-      // Add to undo stack
-      setUndoStack([...undoStack, { action: "delete", data: bookmark }]);
+      // Add to undo stack with size limit
+      const newUndoStack = [
+        ...undoStack.slice(-MAX_UNDO_STACK + 1),
+        { action: "delete", data: bookmark },
+      ];
+      setUndoStack(newUndoStack);
       setBookmarks(bookmarks.filter((b) => b.id !== id));
     }
   };
@@ -245,11 +290,12 @@ export default function BookmarkManager() {
         selectedBookmarks.has(b.id)
       );
 
-      // Add to undo stack
-      setUndoStack([
-        ...undoStack,
+      // Add to undo stack with size limit
+      const newUndoStack = [
+        ...undoStack.slice(-MAX_UNDO_STACK + 1),
         { action: "bulkDelete", data: deletedBookmarks },
-      ]);
+      ];
+      setUndoStack(newUndoStack);
 
       setBookmarks(bookmarks.filter((b) => !selectedBookmarks.has(b.id)));
       setSelectedBookmarks(new Set());
@@ -280,12 +326,69 @@ export default function BookmarkManager() {
     setSelectedBookmarks(new Set());
   };
 
+  // Start editing a bookmark
+  const startEditBookmark = (bookmark) => {
+    setEditingBookmark(bookmark.id);
+    setEditForm({
+      url: bookmark.url,
+      tags: bookmark.tags.join(", "),
+      directory: bookmark.directory || "Unsorted",
+      title: bookmark.title,
+    });
+    setErrorMessage("");
+  };
+
+  // Cancel editing
+  const cancelEdit = () => {
+    setEditingBookmark(null);
+    setEditForm({ url: "", tags: "", directory: "", title: "" });
+    setErrorMessage("");
+  };
+
+  // Save edited bookmark
+  const saveEditBookmark = () => {
+    if (!editingBookmark) return;
+
+    try {
+      // Validate and sanitize URL
+      const validatedURL = validateAndSanitizeURL(editForm.url);
+
+      // Parse and validate tags
+      const validatedTags = parseAndValidateTags(editForm.tags);
+
+      // Sanitize title
+      const validatedTitle = sanitizeTitle(editForm.title);
+
+      // Update the bookmark
+      setBookmarks(
+        bookmarks.map((b) =>
+          b.id === editingBookmark
+            ? {
+                ...b,
+                url: validatedURL,
+                title: validatedTitle,
+                tags: validatedTags,
+                directory: editForm.directory || "Unsorted",
+              }
+            : b
+        )
+      );
+
+      // Clear edit mode
+      cancelEdit();
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  };
+
   const addDirectory = () => {
     setErrorMessage("");
     try {
       const validatedName = validateDirectoryName(newDirectory);
 
-      if (directories.includes(validatedName)) {
+      // Case-insensitive duplicate check
+      const lowerDirs = directories.map((d) => d.toLowerCase());
+      if (lowerDirs.includes(validatedName.toLowerCase())) {
         setErrorMessage("Directory already exists!");
         return;
       }
@@ -375,35 +478,63 @@ export default function BookmarkManager() {
           throw new Error("No valid bookmarks found in backup file");
         }
 
-        const importedDirs = data.directories || ["Unsorted"];
-        if (!importedDirs.includes("Unsorted")) {
-          importedDirs.unshift("Unsorted");
+        // Validate and filter imported directories
+        let importedDirs = data.directories || ["Unsorted"];
+        const validDirs = importedDirs.filter((dir) => {
+          try {
+            validateDirectoryName(dir);
+            return true;
+          } catch {
+            return false;
+          }
+        });
+
+        if (!validDirs.includes("Unsorted")) {
+          validDirs.unshift("Unsorted");
         }
 
-        // Ask user if they want to merge or replace
+        // Remap bookmarks with invalid directories to Unsorted
+        validBookmarks.forEach((bookmark) => {
+          if (!validDirs.includes(bookmark.directory)) {
+            bookmark.directory = "Unsorted";
+          }
+        });
+
+        // Ask user if they want to merge or replace with improved dialog
         const shouldMerge = window.confirm(
-          `Import ${validBookmarks.length} bookmark(s)?\n\nClick OK to MERGE with existing bookmarks.\nClick Cancel to REPLACE all bookmarks.`
+          `Import ${validBookmarks.length} bookmark(s)?\n\n` +
+            `• Click OK to MERGE with existing (${bookmarks.length} current bookmarks)\n` +
+            `• Click Cancel to REPLACE ALL (⚠️ WARNING: will delete all existing bookmarks)\n\n` +
+            `Recommended: Click OK to merge safely.`
         );
 
         if (shouldMerge) {
-          // Merge: Add imported bookmarks and directories
+          // Merge: Add imported bookmarks with new IDs to avoid collisions
           const mergedBookmarks = [...bookmarks];
           const existingIds = new Set(bookmarks.map((b) => b.id));
 
           validBookmarks.forEach((bookmark) => {
-            if (!existingIds.has(bookmark.id)) {
-              mergedBookmarks.push(bookmark);
+            // Generate new unique ID if collision detected
+            let newId = bookmark.id;
+            if (existingIds.has(newId)) {
+              // Generate truly unique ID
+              newId = Date.now() + Math.random() * 1000000;
+              while (existingIds.has(newId)) {
+                newId = Date.now() + Math.random() * 1000000;
+              }
             }
+            existingIds.add(newId);
+            mergedBookmarks.push({ ...bookmark, id: newId });
           });
 
-          const mergedDirs = [...new Set([...directories, ...importedDirs])];
+          const mergedDirs = [...new Set([...directories, ...validDirs])];
 
           setBookmarks(mergedBookmarks);
           setDirectories(mergedDirs);
         } else {
           // Replace: Use imported data
           setBookmarks(validBookmarks);
-          setDirectories(importedDirs);
+          setDirectories(validDirs);
         }
 
         setErrorMessage("");
@@ -425,10 +556,14 @@ export default function BookmarkManager() {
 
   const filteredBookmarks = bookmarks
     .filter((b) => {
+      // Escape special regex characters in search term
+      const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const safeSearchTerm = escapeRegex(searchTerm.toLowerCase());
+
       const matchesSearch =
-        b.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        b.url.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        b.tags.some((t) => t.toLowerCase().includes(searchTerm.toLowerCase()));
+        b.title.toLowerCase().includes(safeSearchTerm) ||
+        b.url.toLowerCase().includes(safeSearchTerm) ||
+        b.tags.some((t) => t.toLowerCase().includes(safeSearchTerm));
 
       if (filter === "archived") return b.archived && matchesSearch;
       if (filter === "unread") return !b.archived && matchesSearch;
@@ -436,14 +571,20 @@ export default function BookmarkManager() {
     })
     .sort((a, b) => {
       switch (sortBy) {
-        case "date-desc":
-          return new Date(b.dateAdded) - new Date(a.dateAdded);
-        case "date-asc":
-          return new Date(a.dateAdded) - new Date(b.dateAdded);
+        case "date-desc": {
+          const dateA = new Date(a.dateAdded).getTime() || 0;
+          const dateB = new Date(b.dateAdded).getTime() || 0;
+          return dateB - dateA;
+        }
+        case "date-asc": {
+          const dateA = new Date(a.dateAdded).getTime() || 0;
+          const dateB = new Date(b.dateAdded).getTime() || 0;
+          return dateA - dateB;
+        }
         case "title-asc":
-          return a.title.localeCompare(b.title);
+          return (a.title || "").localeCompare(b.title || "");
         case "title-desc":
-          return b.title.localeCompare(a.title);
+          return (b.title || "").localeCompare(a.title || "");
         default:
           return 0;
       }
@@ -567,9 +708,22 @@ export default function BookmarkManager() {
                     required
                     className={`w-full bg-slate-900/80 border border-slate-600 ${layout.inputRounded} ${layout.inputPadding} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all placeholder:text-slate-500`}
                   />
-                  <p className="text-xs text-slate-400 mt-1">
-                    Enter a valid http:// or https:// URL
-                  </p>
+                  <div className="flex justify-between items-center mt-1">
+                    <p className="text-xs text-slate-400">
+                      Enter a valid http:// or https:// URL
+                    </p>
+                    {url.length > MAX_URL_LENGTH - 200 && (
+                      <p
+                        className={`text-xs ${
+                          url.length > MAX_URL_LENGTH - 50
+                            ? "text-red-400 font-semibold"
+                            : "text-orange-400"
+                        }`}
+                      >
+                        {MAX_URL_LENGTH - url.length} chars left
+                      </p>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label
@@ -586,6 +740,17 @@ export default function BookmarkManager() {
                     maxLength={MAX_TAG_LENGTH * 10}
                     className={`w-full bg-slate-900/80 border border-slate-600 ${layout.inputRounded} ${layout.inputPadding} focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all placeholder:text-slate-500`}
                   />
+                  {tags.length > MAX_TAG_LENGTH * 5 && (
+                    <p
+                      className={`text-xs mt-1 ${
+                        tags.length > MAX_TAG_LENGTH * 9
+                          ? "text-red-400 font-semibold"
+                          : "text-orange-400"
+                      }`}
+                    >
+                      {MAX_TAG_LENGTH * 10 - tags.length} chars left
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label
@@ -864,109 +1029,241 @@ export default function BookmarkManager() {
                       selectedBookmarks.has(bookmark.id)
                         ? "ring-2 ring-blue-500/50"
                         : ""
+                    } ${
+                      editingBookmark === bookmark.id
+                        ? "ring-2 ring-purple-500/50"
+                        : ""
                     }`}
                   >
-                    <div
-                      className={`flex flex-col sm:flex-row justify-between items-start ${layout.bookmarkCardGap} mb-3`}
-                    >
-                      <div className="flex gap-3 flex-1 min-w-0">
-                        {/* Selection Checkbox */}
-                        <button
-                          onClick={() => toggleBookmarkSelection(bookmark.id)}
-                          className="mt-1 flex-shrink-0 text-slate-400 hover:text-blue-400 transition-colors"
-                          aria-label={
-                            selectedBookmarks.has(bookmark.id)
-                              ? "Deselect bookmark"
-                              : "Select bookmark"
-                          }
-                        >
-                          {selectedBookmarks.has(bookmark.id) ? (
-                            <CheckSquare className="w-5 h-5 text-blue-400" />
-                          ) : (
-                            <Square className="w-5 h-5" />
-                          )}
-                        </button>
-
-                        <div className="flex-1 min-w-0">
-                          <h3
-                            className={`${layout.bookmarkTitleSize} font-semibold mb-2 group-hover:text-blue-300 transition-colors`}
-                          >
-                            {bookmark.title}
+                    {editingBookmark === bookmark.id ? (
+                      /* Edit Mode */
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-semibold text-purple-300">
+                            Edit Bookmark
                           </h3>
-                          <a
-                            href={bookmark.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm text-blue-400 hover:text-blue-300 flex items-center gap-1.5 break-all"
+                          <button
+                            onClick={cancelEdit}
+                            className="text-slate-400 hover:text-slate-200 transition-colors"
+                            title="Cancel editing"
                           >
-                            <ExternalLink className="w-4 h-4 flex-shrink-0" />
-                            {bookmark.url}
-                          </a>
+                            <X className="w-5 h-5" />
+                          </button>
+                        </div>
+
+                        {/* Title Field */}
+                        <div>
+                          <label className="block text-sm font-medium mb-1 text-slate-300">
+                            Title
+                          </label>
+                          <input
+                            type="text"
+                            value={editForm.title}
+                            onChange={(e) =>
+                              setEditForm({
+                                ...editForm,
+                                title: e.target.value,
+                              })
+                            }
+                            placeholder="Bookmark title"
+                            className="w-full bg-slate-900/80 border border-slate-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                          />
+                        </div>
+
+                        {/* URL Field */}
+                        <div>
+                          <label className="block text-sm font-medium mb-1 text-slate-300">
+                            URL
+                          </label>
+                          <input
+                            type="url"
+                            value={editForm.url}
+                            onChange={(e) =>
+                              setEditForm({ ...editForm, url: e.target.value })
+                            }
+                            placeholder="https://example.com"
+                            maxLength={MAX_URL_LENGTH}
+                            className="w-full bg-slate-900/80 border border-slate-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                          />
+                        </div>
+
+                        {/* Tags Field */}
+                        <div>
+                          <label className="block text-sm font-medium mb-1 text-slate-300">
+                            Tags (comma-separated)
+                          </label>
+                          <input
+                            type="text"
+                            value={editForm.tags}
+                            onChange={(e) =>
+                              setEditForm({ ...editForm, tags: e.target.value })
+                            }
+                            placeholder="tag1, tag2, tag3"
+                            className="w-full bg-slate-900/80 border border-slate-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                          />
+                        </div>
+
+                        {/* Directory Field */}
+                        <div>
+                          <label className="block text-sm font-medium mb-1 text-slate-300">
+                            Directory
+                          </label>
+                          <select
+                            value={editForm.directory}
+                            onChange={(e) =>
+                              setEditForm({
+                                ...editForm,
+                                directory: e.target.value,
+                              })
+                            }
+                            className="w-full bg-slate-900/80 border border-slate-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                          >
+                            {directories.map((dir) => (
+                              <option key={dir} value={dir}>
+                                {dir}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Save/Cancel Buttons */}
+                        <div className="flex gap-2 pt-2">
+                          <button
+                            onClick={saveEditBookmark}
+                            className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-lg px-4 py-2.5 font-semibold transition-all"
+                          >
+                            <Save className="w-4 h-4" />
+                            Save Changes
+                          </button>
+                          <button
+                            onClick={cancelEdit}
+                            className="flex-1 flex items-center justify-center gap-2 bg-slate-600/50 hover:bg-slate-500/50 rounded-lg px-4 py-2.5 font-semibold transition-all"
+                          >
+                            <X className="w-4 h-4" />
+                            Cancel
+                          </button>
                         </div>
                       </div>
-                      <div className="flex gap-2 flex-shrink-0">
-                        <button
-                          onClick={() => toggleArchive(bookmark.id)}
-                          className={`p-2.5 ${
-                            layout.buttonRounded
-                          } transition-all shadow-lg ${
-                            bookmark.archived
-                              ? "bg-gradient-to-br from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 hover:shadow-green-500/30"
-                              : "bg-slate-600/50 hover:bg-slate-500/50 border border-slate-600"
-                          }`}
-                          title={bookmark.archived ? "Unarchive" : "Archive"}
+                    ) : (
+                      /* View Mode */
+                      <>
+                        <div
+                          className={`flex flex-col sm:flex-row justify-between items-start ${layout.bookmarkCardGap} mb-3`}
                         >
-                          <FolderOpen className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => deleteBookmark(bookmark.id)}
-                          className={`p-2.5 bg-gradient-to-br from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 ${layout.buttonRounded} transition-all shadow-lg hover:shadow-red-500/30`}
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
+                          <div className="flex gap-3 flex-1 min-w-0">
+                            {/* Selection Checkbox */}
+                            <button
+                              onClick={() =>
+                                toggleBookmarkSelection(bookmark.id)
+                              }
+                              className="mt-1 flex-shrink-0 text-slate-400 hover:text-blue-400 transition-colors"
+                              aria-label={
+                                selectedBookmarks.has(bookmark.id)
+                                  ? "Deselect bookmark"
+                                  : "Select bookmark"
+                              }
+                            >
+                              {selectedBookmarks.has(bookmark.id) ? (
+                                <CheckSquare className="w-5 h-5 text-blue-400" />
+                              ) : (
+                                <Square className="w-5 h-5" />
+                              )}
+                            </button>
 
-                    {bookmark.tags.length > 0 && (
-                      <div className={`flex ${layout.tagGap} mb-4 flex-wrap`}>
-                        {bookmark.tags.map((tag, i) => (
-                          <span
-                            key={i}
-                            className={`flex items-center gap-1.5 ${layout.tagSize} font-medium bg-gradient-to-br from-slate-700 to-slate-800 ${layout.tagPadding} rounded-full border border-slate-600/50`}
+                            <div className="flex-1 min-w-0">
+                              <h3
+                                className={`${layout.bookmarkTitleSize} font-semibold mb-2 group-hover:text-blue-300 transition-colors truncate`}
+                              >
+                                {bookmark.title}
+                              </h3>
+                              <a
+                                href={bookmark.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm text-blue-400 hover:text-blue-300 flex items-center gap-1.5 break-all"
+                              >
+                                <ExternalLink className="w-4 h-4 flex-shrink-0" />
+                                {bookmark.url}
+                              </a>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 flex-shrink-0">
+                            <button
+                              onClick={() => startEditBookmark(bookmark)}
+                              className={`p-2.5 bg-gradient-to-br from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 ${layout.buttonRounded} transition-all shadow-lg hover:shadow-purple-500/30`}
+                              title="Edit"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => toggleArchive(bookmark.id)}
+                              className={`p-2.5 ${
+                                layout.buttonRounded
+                              } transition-all shadow-lg ${
+                                bookmark.archived
+                                  ? "bg-gradient-to-br from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 hover:shadow-green-500/30"
+                                  : "bg-slate-600/50 hover:bg-slate-500/50 border border-slate-600"
+                              }`}
+                              title={
+                                bookmark.archived ? "Unarchive" : "Archive"
+                              }
+                            >
+                              <FolderOpen className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => deleteBookmark(bookmark.id)}
+                              className={`p-2.5 bg-gradient-to-br from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 ${layout.buttonRounded} transition-all shadow-lg hover:shadow-red-500/30`}
+                              title="Delete"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {bookmark.tags.length > 0 && (
+                          <div
+                            className={`flex ${layout.tagGap} mb-4 flex-wrap`}
                           >
-                            <Tag className="w-3 h-3" />
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                            {bookmark.tags.map((tag, i) => (
+                              <span
+                                key={i}
+                                className={`flex items-center gap-1.5 ${layout.tagSize} font-medium bg-gradient-to-br from-slate-700 to-slate-800 ${layout.tagPadding} rounded-full border border-slate-600/50`}
+                              >
+                                <Tag className="w-3 h-3" />
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
 
-                    {bookmark.directory && (
-                      <div className="mb-3 flex items-center gap-2 text-sm text-slate-300">
-                        <Folder className="w-4 h-4 text-yellow-400" />
-                        <span className="font-medium">
-                          {bookmark.directory}
-                        </span>
-                      </div>
-                    )}
+                        {bookmark.directory && (
+                          <div className="mb-3 flex items-center gap-2 text-sm text-slate-300">
+                            <Folder className="w-4 h-4 text-yellow-400" />
+                            <span className="font-medium">
+                              {bookmark.directory}
+                            </span>
+                          </div>
+                        )}
 
-                    <div className="text-xs text-slate-400 mt-3 flex items-center gap-2">
-                      <svg
-                        className="w-3.5 h-3.5"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                        />
-                      </svg>
-                      Added {new Date(bookmark.dateAdded).toLocaleDateString()}
-                    </div>
+                        <div className="text-xs text-slate-400 mt-3 flex items-center gap-2">
+                          <svg
+                            className="w-3.5 h-3.5"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                            />
+                          </svg>
+                          Added{" "}
+                          {new Date(bookmark.dateAdded).toLocaleDateString()}
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))
               )}

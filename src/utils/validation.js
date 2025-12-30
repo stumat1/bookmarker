@@ -47,6 +47,31 @@ export function isValidURL(urlString) {
       return false;
     }
 
+    // Validate hostname format (no double dots, no hyphens at start/end, valid characters)
+    // Regex: alphanumeric start/end, can contain hyphens in middle, dots separate labels
+    const hostnameRegex =
+      /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+    const isIPv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(url.hostname);
+    const isIPv6 = url.hostname.startsWith("[") && url.hostname.endsWith("]");
+    const isLocalhost = url.hostname === "localhost";
+
+    if (
+      !isIPv4 &&
+      !isIPv6 &&
+      !isLocalhost &&
+      !hostnameRegex.test(url.hostname)
+    ) {
+      return false;
+    }
+
+    // Validate port number if present
+    if (url.port) {
+      const portNum = parseInt(url.port, 10);
+      if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+        return false;
+      }
+    }
+
     return true;
   } catch (e) {
     return false;
@@ -54,7 +79,7 @@ export function isValidURL(urlString) {
 }
 
 /**
- * Normalize URL - add protocol if missing
+ * Normalize URL - add protocol if missing and handle encoding
  */
 export function normalizeURL(urlString) {
   if (!urlString) return "";
@@ -66,7 +91,14 @@ export function normalizeURL(urlString) {
     return `https://${trimmed}`;
   }
 
-  return trimmed;
+  // Use URL constructor to properly handle and encode Unicode characters
+  try {
+    const url = new URL(trimmed);
+    return url.href; // Returns properly encoded URL
+  } catch (e) {
+    // If URL parsing fails, return as-is and let validation catch it
+    return trimmed;
+  }
 }
 
 /**
@@ -187,6 +219,12 @@ export function validateBookmark(bookmark) {
     return false;
   }
 
+  // Validate dateAdded is a valid date
+  const date = new Date(bookmark.dateAdded);
+  if (isNaN(date.getTime())) {
+    return false;
+  }
+
   return true;
 }
 
@@ -224,6 +262,12 @@ export function safeLocalStorageSet(key, value) {
  */
 export function safeLocalStorageGet(key, defaultValue = null) {
   try {
+    // Check if localStorage is available
+    if (typeof localStorage === "undefined" || !localStorage) {
+      console.warn("localStorage is not available");
+      return defaultValue;
+    }
+
     const item = localStorage.getItem(key);
     if (item === null) return defaultValue;
 
@@ -231,6 +275,12 @@ export function safeLocalStorageGet(key, defaultValue = null) {
     return parsed;
   } catch (e) {
     console.error("Failed to parse localStorage data:", e);
+    // Check if it's a localStorage access error
+    if (e.name === "SecurityError" || e.message.includes("localStorage")) {
+      throw new Error(
+        "localStorage access denied. Please check browser settings."
+      );
+    }
     return defaultValue;
   }
 }
