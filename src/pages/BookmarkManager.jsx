@@ -30,11 +30,10 @@ import {
   validateDirectoryName,
   sanitizeTitle,
   validateBookmark,
-  safeLocalStorageSet,
-  safeLocalStorageGet,
   MAX_URL_LENGTH,
   MAX_TAG_LENGTH,
 } from "../utils/validation";
+import { bookmarkDB, directoryDB, initializeDB } from "../utils/db";
 
 export default function BookmarkManager() {
   const { layoutDensity } = useLayout();
@@ -63,54 +62,113 @@ export default function BookmarkManager() {
     directory: "",
     title: "",
   });
+  const [draggedBookmark, setDraggedBookmark] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null);
+  const [dbInitialized, setDbInitialized] = useState(false);
 
+  // Initialize database and load data
   useEffect(() => {
-    try {
-      const saved = safeLocalStorageGet("bookmarks", []);
-      // Validate each bookmark
-      const validBookmarks = saved.filter(validateBookmark);
-      if (validBookmarks.length !== saved.length) {
-        console.warn(
-          `Removed ${saved.length - validBookmarks.length} invalid bookmarks`
-        );
-      }
-      setBookmarks(validBookmarks);
+    const loadData = async () => {
+      try {
+        // Initialize database and run migration
+        await initializeDB();
+        setDbInitialized(true);
 
-      const savedDirs = safeLocalStorageGet("directories", ["Unsorted"]);
-      // Ensure 'Unsorted' always exists
-      if (!savedDirs.includes("Unsorted")) {
-        savedDirs.unshift("Unsorted");
+        // Load bookmarks
+        const savedBookmarks = await bookmarkDB.getAll();
+        const validBookmarks = savedBookmarks.filter(validateBookmark);
+        if (validBookmarks.length !== savedBookmarks.length) {
+          console.warn(
+            `Removed ${
+              savedBookmarks.length - validBookmarks.length
+            } invalid bookmarks`
+          );
+        }
+        setBookmarks(validBookmarks);
+
+        // Load directories
+        const savedDirs = await directoryDB.getAll();
+        // Ensure 'Unsorted' always exists
+        if (savedDirs.length === 0 || !savedDirs.includes("Unsorted")) {
+          await directoryDB.add("Unsorted");
+          setDirectories(["Unsorted"]);
+        } else {
+          setDirectories(savedDirs);
+        }
+      } catch (error) {
+        console.error("Failed to load data:", error);
+        setErrorMessage("Failed to load data from database. Starting fresh.");
+        setBookmarks([]);
+        setDirectories(["Unsorted"]);
+        setDbInitialized(true);
       }
-      setDirectories(savedDirs);
-    } catch (error) {
-      console.error("Failed to load data:", error);
-      if (error.message && error.message.includes("localStorage")) {
-        setErrorMessage(
-          "localStorage is disabled or unavailable. Data cannot be saved. Please enable cookies/storage in your browser."
-        );
-      } else {
-        setErrorMessage("Failed to load data. Starting fresh.");
-      }
-      setBookmarks([]);
-      setDirectories(["Unsorted"]);
-    }
+    };
+
+    loadData();
   }, []);
 
+  // Sync bookmarks to IndexedDB whenever they change (updates and deletes only)
   useEffect(() => {
-    try {
-      safeLocalStorageSet("bookmarks", bookmarks);
-    } catch (error) {
-      setErrorMessage(error.message);
-    }
-  }, [bookmarks]);
+    if (!dbInitialized) return;
 
+    const syncBookmarks = async () => {
+      try {
+        // Get current IDs in IndexedDB
+        const currentBookmarks = await bookmarkDB.getAll();
+        const currentIds = new Set(currentBookmarks.map((b) => b.id));
+        const stateIds = new Set(bookmarks.map((b) => b.id));
+
+        // Delete bookmarks that are no longer in state
+        for (const id of currentIds) {
+          if (!stateIds.has(id)) {
+            await bookmarkDB.delete(id);
+          }
+        }
+
+        // Update existing bookmarks (new bookmarks are added directly in addBookmark)
+        for (const bookmark of bookmarks) {
+          if (currentIds.has(bookmark.id)) {
+            await bookmarkDB.update(bookmark.id, bookmark);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to sync bookmarks:", error);
+        setErrorMessage("Failed to save changes to database.");
+      }
+    };
+
+    syncBookmarks();
+  }, [bookmarks, dbInitialized]);
+
+  // Save directories to IndexedDB whenever they change
   useEffect(() => {
-    try {
-      safeLocalStorageSet("directories", directories);
-    } catch (error) {
-      setErrorMessage(error.message);
-    }
-  }, [directories]);
+    if (!dbInitialized) return;
+
+    const saveDirectories = async () => {
+      try {
+        const currentDirs = await directoryDB.getAll();
+
+        // Add new directories
+        for (const dir of directories) {
+          if (!currentDirs.includes(dir)) {
+            await directoryDB.add(dir);
+          }
+        }
+
+        // Remove deleted directories
+        for (const dir of currentDirs) {
+          if (!directories.includes(dir)) {
+            await directoryDB.delete(dir);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to save directories:", error);
+        setErrorMessage("Failed to save directory changes.");
+      }
+    };
+
+    saveDirectories();
+  }, [directories, dbInitialized]);
 
   // Clear selection when filter changes
   useEffect(() => {
@@ -142,10 +200,8 @@ export default function BookmarkManager() {
       // Parse and validate tags
       const validatedTags = parseAndValidateTags(tags);
 
-      // Add bookmark immediately with URL as title
-      const bookmarkId = Date.now();
-      const newBookmark = {
-        id: bookmarkId,
+      // Create bookmark object (without ID - let DB generate it)
+      const bookmarkData = {
         url: validatedURL,
         title: sanitizeTitle(validatedURL),
         tags: validatedTags,
@@ -154,11 +210,16 @@ export default function BookmarkManager() {
         directory: selectedDirectory || "Unsorted",
       };
 
+      // Add to DB first to get the real ID
+      const newBookmark = await bookmarkDB.add(bookmarkData);
+
       setBookmarks([newBookmark, ...bookmarks]);
       setUrl("");
       setTags("");
       setSelectedDirectory("Unsorted");
       setLoading(false);
+
+      const bookmarkId = newBookmark.id;
 
       // Fetch page title in background (non-blocking) with retry
       const fetchTitle = async (retries = 2) => {
@@ -326,6 +387,43 @@ export default function BookmarkManager() {
     setSelectedBookmarks(new Set());
   };
 
+  // Drag and Drop handlers
+  const handleDragStart = (e, bookmark) => {
+    setDraggedBookmark(bookmark);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", bookmark.id);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedBookmark(null);
+    setDropTarget(null);
+  };
+
+  const handleDragOver = (e, directory) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDropTarget(directory);
+  };
+
+  const handleDragLeave = () => {
+    setDropTarget(null);
+  };
+
+  const handleDrop = (e, directory) => {
+    e.preventDefault();
+    if (!draggedBookmark) return;
+
+    // Move the bookmark to the new directory
+    setBookmarks(
+      bookmarks.map((b) =>
+        b.id === draggedBookmark.id ? { ...b, directory } : b
+      )
+    );
+
+    setDraggedBookmark(null);
+    setDropTarget(null);
+  };
+
   // Start editing a bookmark
   const startEditBookmark = (bookmark) => {
     setEditingBookmark(bookmark.id);
@@ -427,6 +525,8 @@ export default function BookmarkManager() {
 
   // Export bookmarks to JSON file
   const exportBookmarks = () => {
+    let url = null;
+    let a = null;
     try {
       const data = {
         bookmarks,
@@ -438,21 +538,27 @@ export default function BookmarkManager() {
       const blob = new Blob([JSON.stringify(data, null, 2)], {
         type: "application/json",
       });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
+      url = URL.createObjectURL(blob);
+      a = document.createElement("a");
       a.href = url;
       a.download = `bookmarks-backup-${
         new Date().toISOString().split("T")[0]
       }.json`;
       document.body.appendChild(a);
       a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
 
       setErrorMessage(""); // Clear any errors
       alert("Bookmarks exported successfully!");
     } catch (error) {
       setErrorMessage("Failed to export bookmarks: " + error.message);
+    } finally {
+      // Always clean up resources
+      if (a && a.parentNode) {
+        document.body.removeChild(a);
+      }
+      if (url) {
+        URL.revokeObjectURL(url);
+      }
     }
   };
 
@@ -493,16 +599,17 @@ export default function BookmarkManager() {
           validDirs.unshift("Unsorted");
         }
 
-        // Remap bookmarks with invalid directories to Unsorted
-        validBookmarks.forEach((bookmark) => {
+        // Remap bookmarks with invalid directories to Unsorted (without mutating original)
+        const remappedBookmarks = validBookmarks.map((bookmark) => {
           if (!validDirs.includes(bookmark.directory)) {
-            bookmark.directory = "Unsorted";
+            return { ...bookmark, directory: "Unsorted" };
           }
+          return bookmark;
         });
 
         // Ask user if they want to merge or replace with improved dialog
         const shouldMerge = window.confirm(
-          `Import ${validBookmarks.length} bookmark(s)?\n\n` +
+          `Import ${remappedBookmarks.length} bookmark(s)?\n\n` +
             `• Click OK to MERGE with existing (${bookmarks.length} current bookmarks)\n` +
             `• Click Cancel to REPLACE ALL (⚠️ WARNING: will delete all existing bookmarks)\n\n` +
             `Recommended: Click OK to merge safely.`
@@ -513,14 +620,14 @@ export default function BookmarkManager() {
           const mergedBookmarks = [...bookmarks];
           const existingIds = new Set(bookmarks.map((b) => b.id));
 
-          validBookmarks.forEach((bookmark) => {
-            // Generate new unique ID if collision detected
+          remappedBookmarks.forEach((bookmark) => {
+            // Generate new unique integer ID if collision detected
             let newId = bookmark.id;
             if (existingIds.has(newId)) {
-              // Generate truly unique ID
-              newId = Date.now() + Math.random() * 1000000;
+              // Generate truly unique integer ID
+              newId = Math.floor(Date.now() + Math.random() * 1000000);
               while (existingIds.has(newId)) {
-                newId = Date.now() + Math.random() * 1000000;
+                newId = Math.floor(Date.now() + Math.random() * 1000000);
               }
             }
             existingIds.add(newId);
@@ -533,12 +640,12 @@ export default function BookmarkManager() {
           setDirectories(mergedDirs);
         } else {
           // Replace: Use imported data
-          setBookmarks(validBookmarks);
+          setBookmarks(remappedBookmarks);
           setDirectories(validDirs);
         }
 
         setErrorMessage("");
-        alert(`Successfully imported ${validBookmarks.length} bookmark(s)!`);
+        alert(`Successfully imported ${remappedBookmarks.length} bookmark(s)!`);
       } catch (error) {
         setErrorMessage("Failed to import bookmarks: " + error.message);
       }
@@ -556,14 +663,13 @@ export default function BookmarkManager() {
 
   const filteredBookmarks = bookmarks
     .filter((b) => {
-      // Escape special regex characters in search term
-      const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const safeSearchTerm = escapeRegex(searchTerm.toLowerCase());
+      // Use simple lowercase comparison for search (no regex needed for .includes())
+      const lowerSearchTerm = searchTerm.toLowerCase();
 
       const matchesSearch =
-        b.title.toLowerCase().includes(safeSearchTerm) ||
-        b.url.toLowerCase().includes(safeSearchTerm) ||
-        b.tags.some((t) => t.toLowerCase().includes(safeSearchTerm));
+        b.title.toLowerCase().includes(lowerSearchTerm) ||
+        b.url.toLowerCase().includes(lowerSearchTerm) ||
+        (Array.isArray(b.tags) && b.tags.some((t) => t.toLowerCase().includes(lowerSearchTerm)));
 
       if (filter === "archived") return b.archived && matchesSearch;
       if (filter === "unread") return !b.archived && matchesSearch;
@@ -840,7 +946,18 @@ export default function BookmarkManager() {
                     directories.map((dir) => (
                       <div
                         key={dir}
-                        className={`flex items-center justify-between bg-slate-900/50 ${layout.directoryItemRounded} ${layout.directoryItemPadding} border border-slate-700/50 hover:border-slate-600 transition-all`}
+                        className={`flex items-center justify-between bg-slate-900/50 ${
+                          layout.directoryItemRounded
+                        } ${
+                          layout.directoryItemPadding
+                        } border transition-all ${
+                          dropTarget === dir
+                            ? "border-green-500 bg-green-900/30 shadow-lg shadow-green-500/30"
+                            : "border-slate-700/50 hover:border-slate-600"
+                        }`}
+                        onDragOver={(e) => handleDragOver(e, dir)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={(e) => handleDrop(e, dir)}
                       >
                         <div className="flex items-center gap-2 text-slate-200">
                           <Folder className="w-4 h-4 text-yellow-400" />
@@ -1021,6 +1138,9 @@ export default function BookmarkManager() {
                 filteredBookmarks.map((bookmark) => (
                   <div
                     key={bookmark.id}
+                    draggable={editingBookmark !== bookmark.id}
+                    onDragStart={(e) => handleDragStart(e, bookmark)}
+                    onDragEnd={handleDragEnd}
                     className={`bg-slate-800/50 backdrop-blur-xl ${
                       layout.bookmarkCardRounded
                     } ${
@@ -1033,6 +1153,10 @@ export default function BookmarkManager() {
                       editingBookmark === bookmark.id
                         ? "ring-2 ring-purple-500/50"
                         : ""
+                    } ${
+                      draggedBookmark?.id === bookmark.id
+                        ? "opacity-50 cursor-grabbing"
+                        : "cursor-grab"
                     }`}
                   >
                     {editingBookmark === bookmark.id ? (

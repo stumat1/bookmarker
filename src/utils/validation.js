@@ -47,21 +47,26 @@ export function isValidURL(urlString) {
       return false;
     }
 
-    // Validate hostname format (no double dots, no hyphens at start/end, valid characters)
-    // Regex: alphanumeric start/end, can contain hyphens in middle, dots separate labels
-    const hostnameRegex =
-      /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+    // Check for special cases first
     const isIPv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(url.hostname);
     const isIPv6 = url.hostname.startsWith("[") && url.hostname.endsWith("]");
     const isLocalhost = url.hostname === "localhost";
 
-    if (
-      !isIPv4 &&
-      !isIPv6 &&
-      !isLocalhost &&
-      !hostnameRegex.test(url.hostname)
-    ) {
-      return false;
+    // For regular hostnames (not IP or localhost), require at least one dot
+    // This prevents single-label hostnames like "asdf", "test", etc.
+    if (!isIPv4 && !isIPv6 && !isLocalhost) {
+      // Must contain at least one dot (e.g., example.com, sub.example.com)
+      if (!url.hostname.includes(".")) {
+        return false;
+      }
+
+      // Validate hostname format (no double dots, no hyphens at start/end, valid characters)
+      // Regex: alphanumeric start/end, can contain hyphens in middle, dots separate labels
+      const hostnameRegex =
+        /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+      if (!hostnameRegex.test(url.hostname)) {
+        return false;
+      }
     }
 
     // Validate port number if present
@@ -108,8 +113,23 @@ export function validateAndSanitizeURL(urlString) {
   const normalized = normalizeURL(urlString);
 
   if (!isValidURL(normalized)) {
+    // Provide specific error message based on the issue
+    try {
+      const url = new URL(normalized);
+      if (
+        !url.hostname.includes(".") &&
+        url.hostname !== "localhost" &&
+        !url.hostname.startsWith("[")
+      ) {
+        throw new Error(
+          "Invalid URL. Please enter a complete domain name (e.g., example.com, www.site.com)."
+        );
+      }
+    } catch (e) {
+      // Fall through to generic error
+    }
     throw new Error(
-      "Invalid URL format. Please enter a valid http:// or https:// URL."
+      "Invalid URL format. Please enter a valid http:// or https:// URL with a proper domain name."
     );
   }
 

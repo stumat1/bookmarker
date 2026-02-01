@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, Layout, Maximize2, Minimize2 } from "lucide-react";
 import { useLayout, LAYOUT_DENSITIES } from "../contexts/LayoutContext";
+import DatabaseStatus from "../components/DatabaseStatus";
 
 export default function Settings() {
   const { layoutDensity, setLayoutDensity } = useLayout();
@@ -46,6 +47,9 @@ export default function Settings() {
 
         {/* Settings content */}
         <div className="space-y-6">
+          {/* Database Status */}
+          <DatabaseStatus />
+
           {/* Layout Density Setting */}
           <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl p-8 border border-slate-700/50 shadow-2xl shadow-purple-900/20">
             <h2 className="text-2xl font-semibold mb-2 text-slate-100">
