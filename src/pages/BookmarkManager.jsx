@@ -1,26 +1,20 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   Bookmark,
-  Trash2,
-  Tag,
-  ExternalLink,
   Search,
   FolderOpen,
-  FolderPlus,
-  Folder,
+  Trash2,
   Settings as SettingsIcon,
   Download,
   Upload,
   AlertCircle,
+  CheckCircle,
   Undo,
   CheckSquare,
   Square,
   ArrowUpDown,
   Archive,
-  Edit,
-  Save,
-  X,
 } from "lucide-react";
 import { useLayout } from "../contexts/LayoutContext";
 import { useTheme } from "../contexts/ThemeContext";
@@ -32,10 +26,11 @@ import {
   validateDirectoryName,
   sanitizeTitle,
   validateBookmark,
-  MAX_URL_LENGTH,
-  MAX_TAG_LENGTH,
 } from "../utils/validation";
 import { bookmarkDB, directoryDB, initializeDB } from "../utils/db";
+import BookmarkCard from "../components/BookmarkCard";
+import AddBookmarkForm from "../components/AddBookmarkForm";
+import DirectoryList from "../components/DirectoryList";
 
 export default function BookmarkManager() {
   const { layoutDensity } = useLayout();
@@ -51,6 +46,7 @@ export default function BookmarkManager() {
   const [tags, setTags] = useState("");
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [filter, setFilter] = useState("all"); // all, unread, archived
   const [directories, setDirectories] = useState(["Unsorted"]);
   const [newDirectory, setNewDirectory] = useState("");
@@ -69,6 +65,12 @@ export default function BookmarkManager() {
   const [draggedBookmark, setDraggedBookmark] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
   const [dbInitialized, setDbInitialized] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+
+  // Track pending changes for efficient sync (only modified bookmark IDs)
+  const pendingUpdates = useRef(new Set());
+  const pendingDeletes = useRef(new Set());
+  const knownIds = useRef(new Set());
 
   // Initialize database and load data
   useEffect(() => {
@@ -89,6 +91,8 @@ export default function BookmarkManager() {
           );
         }
         setBookmarks(validBookmarks);
+        // Initialize known IDs for efficient sync
+        knownIds.current = new Set(validBookmarks.map((b) => b.id));
 
         // Load directories
         const savedDirs = await directoryDB.getAll();
@@ -111,29 +115,32 @@ export default function BookmarkManager() {
     loadData();
   }, []);
 
-  // Sync bookmarks to IndexedDB whenever they change (updates and deletes only)
+  // Sync bookmarks to IndexedDB - only process pending changes (not all bookmarks)
   useEffect(() => {
     if (!dbInitialized) return;
 
     const syncBookmarks = async () => {
       try {
-        // Get current IDs in IndexedDB
-        const currentBookmarks = await bookmarkDB.getAll();
-        const currentIds = new Set(currentBookmarks.map((b) => b.id));
-        const stateIds = new Set(bookmarks.map((b) => b.id));
-
-        // Delete bookmarks that are no longer in state
-        for (const id of currentIds) {
-          if (!stateIds.has(id)) {
+        // Process pending deletes
+        if (pendingDeletes.current.size > 0) {
+          const idsToDelete = [...pendingDeletes.current];
+          for (const id of idsToDelete) {
             await bookmarkDB.delete(id);
+            knownIds.current.delete(id);
           }
+          pendingDeletes.current.clear();
         }
 
-        // Update existing bookmarks (new bookmarks are added directly in addBookmark)
-        for (const bookmark of bookmarks) {
-          if (currentIds.has(bookmark.id)) {
-            await bookmarkDB.update(bookmark.id, bookmark);
+        // Process pending updates only
+        if (pendingUpdates.current.size > 0) {
+          const idsToUpdate = [...pendingUpdates.current];
+          for (const id of idsToUpdate) {
+            const bookmark = bookmarks.find((b) => b.id === id);
+            if (bookmark && knownIds.current.has(id)) {
+              await bookmarkDB.update(id, bookmark);
+            }
           }
+          pendingUpdates.current.clear();
         }
       } catch (error) {
         console.error("Failed to sync bookmarks:", error);
@@ -179,6 +186,22 @@ export default function BookmarkManager() {
     setSelectedBookmarks(new Set());
   }, [filter]);
 
+  // Auto-clear success messages after 5 seconds
+  useEffect(() => {
+    if (successMessage) {
+      const timer = setTimeout(() => setSuccessMessage(""), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [successMessage]);
+
+  // Debounce search term for better performance (300ms delay)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
   const addBookmark = async () => {
     if (!url.trim()) return;
 
@@ -216,6 +239,7 @@ export default function BookmarkManager() {
 
       // Add to DB first to get the real ID
       const newBookmark = await bookmarkDB.add(bookmarkData);
+      knownIds.current.add(newBookmark.id);
 
       setBookmarks([newBookmark, ...bookmarks]);
       setUrl("");
@@ -249,10 +273,12 @@ export default function BookmarkManager() {
           if (title && title.trim()) {
             const sanitizedTitle = sanitizeTitle(title.trim());
             // Update bookmark with fetched title only if it still exists
+            pendingUpdates.current.add(bookmarkId);
             setBookmarks((prev) => {
               const bookmark = prev.find((b) => b.id === bookmarkId);
               if (!bookmark) {
                 // Bookmark was deleted, don't update
+                pendingUpdates.current.delete(bookmarkId);
                 return prev;
               }
               return prev.map((b) =>
@@ -292,28 +318,38 @@ export default function BookmarkManager() {
         { action: "delete", data: bookmark },
       ];
       setUndoStack(newUndoStack);
+      pendingDeletes.current.add(id);
       setBookmarks(bookmarks.filter((b) => b.id !== id));
     }
   };
 
   const toggleArchive = (id) => {
+    pendingUpdates.current.add(id);
     setBookmarks(
       bookmarks.map((b) => (b.id === id ? { ...b, archived: !b.archived } : b)),
     );
   };
 
   // Undo last action
-  const handleUndo = () => {
+  const handleUndo = async () => {
     if (undoStack.length === 0) return;
 
     const lastAction = undoStack[undoStack.length - 1];
 
     if (lastAction.action === "delete") {
-      // Restore deleted bookmark
-      setBookmarks([lastAction.data, ...bookmarks]);
+      // Restore deleted bookmark - re-add to DB
+      const restored = await bookmarkDB.add(lastAction.data);
+      knownIds.current.add(restored.id);
+      setBookmarks([restored, ...bookmarks]);
     } else if (lastAction.action === "bulkDelete") {
-      // Restore multiple deleted bookmarks
-      setBookmarks([...lastAction.data, ...bookmarks]);
+      // Restore multiple deleted bookmarks - re-add to DB
+      const restoredBookmarks = [];
+      for (const bookmark of lastAction.data) {
+        const restored = await bookmarkDB.add(bookmark);
+        knownIds.current.add(restored.id);
+        restoredBookmarks.push(restored);
+      }
+      setBookmarks([...restoredBookmarks, ...bookmarks]);
     }
 
     // Remove from undo stack
@@ -362,6 +398,8 @@ export default function BookmarkManager() {
       ];
       setUndoStack(newUndoStack);
 
+      // Mark all as pending deletes
+      selectedBookmarks.forEach((id) => pendingDeletes.current.add(id));
       setBookmarks(bookmarks.filter((b) => !selectedBookmarks.has(b.id)));
       setSelectedBookmarks(new Set());
     }
@@ -371,6 +409,8 @@ export default function BookmarkManager() {
   const bulkArchiveBookmarks = (archive) => {
     if (selectedBookmarks.size === 0) return;
 
+    // Mark all as pending updates
+    selectedBookmarks.forEach((id) => pendingUpdates.current.add(id));
     setBookmarks(
       bookmarks.map((b) =>
         selectedBookmarks.has(b.id) ? { ...b, archived: archive } : b,
@@ -383,6 +423,8 @@ export default function BookmarkManager() {
   const bulkMoveBookmarks = (directory) => {
     if (selectedBookmarks.size === 0) return;
 
+    // Mark all as pending updates
+    selectedBookmarks.forEach((id) => pendingUpdates.current.add(id));
     setBookmarks(
       bookmarks.map((b) =>
         selectedBookmarks.has(b.id) ? { ...b, directory } : b,
@@ -418,6 +460,7 @@ export default function BookmarkManager() {
     if (!draggedBookmark) return;
 
     // Move the bookmark to the new directory
+    pendingUpdates.current.add(draggedBookmark.id);
     setBookmarks(
       bookmarks.map((b) =>
         b.id === draggedBookmark.id ? { ...b, directory } : b,
@@ -460,6 +503,9 @@ export default function BookmarkManager() {
 
       // Sanitize title
       const validatedTitle = sanitizeTitle(editForm.title);
+
+      // Mark as pending update
+      pendingUpdates.current.add(editingBookmark);
 
       // Update the bookmark
       setBookmarks(
@@ -552,7 +598,7 @@ export default function BookmarkManager() {
       a.click();
 
       setErrorMessage(""); // Clear any errors
-      alert("Bookmarks exported successfully!");
+      setSuccessMessage("Bookmarks exported successfully!");
     } catch (error) {
       setErrorMessage("Failed to export bookmarks: " + error.message);
     } finally {
@@ -572,7 +618,7 @@ export default function BookmarkManager() {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const data = JSON.parse(e.target?.result);
 
@@ -626,6 +672,7 @@ export default function BookmarkManager() {
 
           // Counter for generating unique IDs when collisions occur
           let idCounter = 0;
+          const newBookmarksToAdd = [];
 
           remappedBookmarks.forEach((bookmark) => {
             let newId = bookmark.id;
@@ -649,21 +696,41 @@ export default function BookmarkManager() {
               }
             }
             existingIds.add(newId);
-            mergedBookmarks.push({ ...bookmark, id: newId });
+            const newBookmark = { ...bookmark, id: newId };
+            mergedBookmarks.push(newBookmark);
+            newBookmarksToAdd.push(newBookmark);
           });
+
+          // Add new bookmarks to DB
+          for (const bookmark of newBookmarksToAdd) {
+            await bookmarkDB.add(bookmark);
+            knownIds.current.add(bookmark.id);
+          }
 
           const mergedDirs = [...new Set([...directories, ...validDirs])];
 
           setBookmarks(mergedBookmarks);
           setDirectories(mergedDirs);
         } else {
-          // Replace: Use imported data
+          // Replace: Clear existing and add all imported bookmarks to DB
+          // Delete all existing bookmarks from DB
+          for (const id of knownIds.current) {
+            await bookmarkDB.delete(id);
+          }
+          knownIds.current.clear();
+
+          // Add all imported bookmarks to DB
+          for (const bookmark of remappedBookmarks) {
+            await bookmarkDB.add(bookmark);
+            knownIds.current.add(bookmark.id);
+          }
+
           setBookmarks(remappedBookmarks);
           setDirectories(validDirs);
         }
 
         setErrorMessage("");
-        alert(`Successfully imported ${remappedBookmarks.length} bookmark(s)!`);
+        setSuccessMessage(`Successfully imported ${remappedBookmarks.length} bookmark(s)!`);
       } catch (error) {
         setErrorMessage("Failed to import bookmarks: " + error.message);
       }
@@ -681,8 +748,8 @@ export default function BookmarkManager() {
 
   const filteredBookmarks = bookmarks
     .filter((b) => {
-      // Use simple lowercase comparison for search (no regex needed for .includes())
-      const lowerSearchTerm = searchTerm.toLowerCase();
+      // Use debounced search term for better performance
+      const lowerSearchTerm = debouncedSearchTerm.toLowerCase();
 
       const matchesSearch =
         b.title.toLowerCase().includes(lowerSearchTerm) ||
@@ -746,9 +813,45 @@ export default function BookmarkManager() {
           </Link>
         </div>
 
+        {/* ARIA Live Region for Screen Reader Announcements */}
+        <div
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          className="sr-only"
+        >
+          {successMessage && successMessage}
+          {errorMessage && `Error: ${errorMessage}`}
+        </div>
+
+        {/* Success Message Display */}
+        {successMessage && (
+          <div
+            role="alert"
+            aria-live="polite"
+            className={`mb-6 ${themeStyles.successBackground} backdrop-blur-xl rounded-xl p-4 border ${themeStyles.successBorder} flex items-start gap-3`}
+          >
+            <CheckCircle className={`w-5 h-5 ${themeStyles.successIcon} flex-shrink-0 mt-0.5`} />
+            <div className="flex-1">
+              <p className={`${themeStyles.successText} font-medium`}>{successMessage}</p>
+            </div>
+            <button
+              onClick={() => setSuccessMessage("")}
+              className={`${themeStyles.successIcon} hover:opacity-70 transition-colors`}
+              aria-label="Dismiss success message"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         {/* Error Message Display */}
         {errorMessage && (
-          <div className={`mb-6 ${themeStyles.errorBackground} backdrop-blur-xl rounded-xl p-4 border ${themeStyles.errorBorder} flex items-start gap-3`}>
+          <div
+            role="alert"
+            aria-live="assertive"
+            className={`mb-6 ${themeStyles.errorBackground} backdrop-blur-xl rounded-xl p-4 border ${themeStyles.errorBorder} flex items-start gap-3`}
+          >
             <AlertCircle className={`w-5 h-5 ${themeStyles.errorIcon} flex-shrink-0 mt-0.5`} />
             <div className="flex-1">
               <p className={`${themeStyles.errorText} font-medium`}>{errorMessage}</p>
@@ -805,203 +908,36 @@ export default function BookmarkManager() {
 
         {/* Two Column Layout */}
         <div className={`grid grid-cols-1 lg:grid-cols-3 ${layout.cardGap}`}>
-          {/* Left Column - Add Bookmark Form */}
+          {/* Left Column - Add Bookmark Form & Directory Management */}
           <div className={`lg:col-span-1 ${layout.cardGap}`}>
-            <div
-              className={`${themeStyles.cardBackground} ${layout.cardRounded} ${layout.cardPadding} border ${themeStyles.cardBorder} ${themeStyles.cardShadow} ${layout.stickyTop} lg:sticky`}
-            >
-              <h2
-                className={`${layout.bookmarkTitleSize} font-semibold ${layout.labelMargin} ${themeStyles.textSecondary}`}
-              >
-                Add Bookmark
-              </h2>
-              <div className={layout.cardGap}>
-                <div>
-                  <label
-                    className={`block ${layout.labelSize} font-semibold ${layout.labelMargin} ${themeStyles.textSecondary}`}
-                  >
-                    URL
-                  </label>
-                  <input
-                    type="url"
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && addBookmark()}
-                    placeholder="https://example.com/article"
-                    maxLength={MAX_URL_LENGTH}
-                    required
-                    className={`w-full ${themeStyles.inputBackground} border ${themeStyles.inputBorder} ${layout.inputRounded} ${layout.inputPadding} focus:outline-none focus:ring-2 ${themeStyles.inputFocus} focus:border-transparent transition-all ${themeStyles.inputPlaceholder}`}
-                  />
-                  <div className="flex justify-between items-center mt-1">
-                    <p className={`text-xs ${themeStyles.textMuted}`}>
-                      Enter a valid http:// or https:// URL
-                    </p>
-                    {url.length > MAX_URL_LENGTH - 200 && (
-                      <p
-                        className={`text-xs ${
-                          url.length > MAX_URL_LENGTH - 50
-                            ? "text-red-400 font-semibold"
-                            : "text-orange-400"
-                        }`}
-                      >
-                        {MAX_URL_LENGTH - url.length} chars left
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <label
-                    className={`block ${layout.labelSize} font-semibold ${layout.labelMargin} ${themeStyles.textSecondary}`}
-                  >
-                    Tags (comma-separated)
-                  </label>
-                  <input
-                    type="text"
-                    value={tags}
-                    onChange={(e) => setTags(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && addBookmark()}
-                    placeholder="tech, programming, tutorial"
-                    maxLength={MAX_TAG_LENGTH * 10}
-                    className={`w-full ${themeStyles.inputBackground} border ${themeStyles.inputBorder} ${layout.inputRounded} ${layout.inputPadding} focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${themeStyles.inputPlaceholder}`}
-                  />
-                  {tags.length > MAX_TAG_LENGTH * 5 && (
-                    <p
-                      className={`text-xs mt-1 ${
-                        tags.length > MAX_TAG_LENGTH * 9
-                          ? "text-red-400 font-semibold"
-                          : "text-orange-400"
-                      }`}
-                    >
-                      {MAX_TAG_LENGTH * 10 - tags.length} chars left
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label
-                    className={`block ${layout.labelSize} font-semibold ${layout.labelMargin} ${themeStyles.textSecondary}`}
-                  >
-                    Directory
-                  </label>
-                  <select
-                    value={selectedDirectory}
-                    onChange={(e) => setSelectedDirectory(e.target.value)}
-                    className={`w-full ${themeStyles.selectBackground} border ${themeStyles.selectBorder} ${layout.inputRounded} ${layout.inputPadding} focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all`}
-                  >
-                    {directories.map((dir) => (
-                      <option key={dir} value={dir}>
-                        {dir}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <button
-                  onClick={addBookmark}
-                  disabled={loading}
-                  className={`w-full ${themeStyles.buttonPrimary} disabled:${themeStyles.buttonDisabled} ${layout.buttonRounded} ${layout.buttonPadding} font-semibold disabled:transform-none disabled:cursor-not-allowed`}
-                >
-                  {loading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                          fill="none"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        />
-                      </svg>
-                      Adding...
-                    </span>
-                  ) : (
-                    "Add Bookmark"
-                  )}
-                </button>
-              </div>
-            </div>
+            <AddBookmarkForm
+              url={url}
+              setUrl={setUrl}
+              tags={tags}
+              setTags={setTags}
+              selectedDirectory={selectedDirectory}
+              setSelectedDirectory={setSelectedDirectory}
+              directories={directories}
+              loading={loading}
+              onSubmit={addBookmark}
+              themeStyles={themeStyles}
+              layout={layout}
+            />
 
-            {/* Directory Management */}
-            <div
-              className={`${themeStyles.cardBackground} ${layout.cardRounded} ${layout.cardPadding} border ${themeStyles.cardBorder} ${themeStyles.cardShadow} ${layout.stickyTop} lg:sticky`}
-            >
-              <h2
-                className={`${layout.bookmarkTitleSize} font-semibold ${layout.labelMargin} ${themeStyles.textSecondary} flex items-center gap-2`}
-              >
-                <FolderPlus className="w-5 h-5" />
-                Directories
-              </h2>
-              <div className={layout.cardGap}>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newDirectory}
-                    onChange={(e) => setNewDirectory(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && addDirectory()}
-                    placeholder="New directory name"
-                    className={`flex-1 ${themeStyles.inputBackground} border ${themeStyles.inputBorder} ${layout.inputRounded} ${layout.inputPadding} focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${themeStyles.inputPlaceholder}`}
-                  />
-                  <button
-                    onClick={addDirectory}
-                    className={`${themeStyles.buttonSuccess} ${layout.buttonRounded} ${layout.buttonPadding} font-semibold transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg`}
-                    title="Add Directory"
-                  >
-                    <FolderPlus className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {directories.length === 0 ? (
-                    <p className={`text-sm ${themeStyles.textMuted} text-center py-4`}>
-                      No directories yet
-                    </p>
-                  ) : (
-                    directories.map((dir) => (
-                      <div
-                        key={dir}
-                        className={`flex items-center justify-between ${themeStyles.directoryBackground} ${
-                          layout.directoryItemRounded
-                        } ${
-                          layout.directoryItemPadding
-                        } border transition-all ${
-                          dropTarget === dir
-                            ? themeStyles.directoryDropTarget
-                            : `${themeStyles.directoryBorder} ${themeStyles.directoryHover}`
-                        }`}
-                        onDragOver={(e) => handleDragOver(e, dir)}
-                        onDragLeave={handleDragLeave}
-                        onDrop={(e) => handleDrop(e, dir)}
-                      >
-                        <div className={`flex items-center gap-2 ${themeStyles.textSecondary}`}>
-                          <Folder className={`w-4 h-4 ${themeStyles.iconFolder}`} />
-                          <span className="font-medium">{dir}</span>
-                          <span className={`text-xs ${themeStyles.textMuted}`}>
-                            (
-                            {
-                              bookmarks.filter((b) => b.directory === dir)
-                                .length
-                            }
-                            )
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => deleteDirectory(dir)}
-                          className="text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded p-1 transition-all"
-                          title="Delete Directory"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
+            <DirectoryList
+              directories={directories}
+              bookmarks={bookmarks}
+              newDirectory={newDirectory}
+              setNewDirectory={setNewDirectory}
+              dropTarget={dropTarget}
+              themeStyles={themeStyles}
+              layout={layout}
+              onAddDirectory={addDirectory}
+              onDeleteDirectory={deleteDirectory}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            />
           </div>
 
           {/* Right Column - Bookmarks List */}
@@ -1154,259 +1090,26 @@ export default function BookmarkManager() {
                 </div>
               ) : (
                 filteredBookmarks.map((bookmark) => (
-                  <div
+                  <BookmarkCard
                     key={bookmark.id}
-                    draggable={editingBookmark !== bookmark.id}
-                    onDragStart={(e) => handleDragStart(e, bookmark)}
+                    bookmark={bookmark}
+                    isSelected={selectedBookmarks.has(bookmark.id)}
+                    isEditing={editingBookmark === bookmark.id}
+                    isDragged={draggedBookmark?.id === bookmark.id}
+                    editForm={editForm}
+                    setEditForm={setEditForm}
+                    directories={directories}
+                    themeStyles={themeStyles}
+                    layout={layout}
+                    onToggleSelection={toggleBookmarkSelection}
+                    onStartEdit={startEditBookmark}
+                    onSaveEdit={saveEditBookmark}
+                    onCancelEdit={cancelEdit}
+                    onToggleArchive={toggleArchive}
+                    onDelete={deleteBookmark}
+                    onDragStart={handleDragStart}
                     onDragEnd={handleDragEnd}
-                    className={`${themeStyles.bookmarkCardBackground} ${
-                      layout.bookmarkCardRounded
-                    } ${
-                      layout.bookmarkCardPadding
-                    } border ${themeStyles.bookmarkCardBorder} ${themeStyles.cardHover} transition-all group ${
-                      selectedBookmarks.has(bookmark.id)
-                        ? themeStyles.bookmarkCardSelected
-                        : ""
-                    } ${
-                      editingBookmark === bookmark.id
-                        ? themeStyles.bookmarkCardEditing
-                        : ""
-                    } ${
-                      draggedBookmark?.id === bookmark.id
-                        ? "opacity-50 cursor-grabbing"
-                        : "cursor-grab"
-                    }`}
-                  >
-                    {editingBookmark === bookmark.id ? (
-                      /* Edit Mode */
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between mb-4">
-                          <h3 className={`text-lg font-semibold ${themeStyles.editTitleColor}`}>
-                            Edit Bookmark
-                          </h3>
-                          <button
-                            onClick={cancelEdit}
-                            className={`${themeStyles.textMuted} hover:${themeStyles.textSecondary} transition-colors`}
-                            title="Cancel editing"
-                          >
-                            <X className="w-5 h-5" />
-                          </button>
-                        </div>
-
-                        {/* Title Field */}
-                        <div>
-                          <label className={`block text-sm font-medium mb-1 ${themeStyles.editLabelColor}`}>
-                            Title
-                          </label>
-                          <input
-                            type="text"
-                            value={editForm.title}
-                            onChange={(e) =>
-                              setEditForm({
-                                ...editForm,
-                                title: e.target.value,
-                              })
-                            }
-                            placeholder="Bookmark title"
-                            className={`w-full ${themeStyles.inputBackground} border ${themeStyles.inputBorder} rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all`}
-                          />
-                        </div>
-
-                        {/* URL Field */}
-                        <div>
-                          <label className={`block text-sm font-medium mb-1 ${themeStyles.editLabelColor}`}>
-                            URL
-                          </label>
-                          <input
-                            type="url"
-                            value={editForm.url}
-                            onChange={(e) =>
-                              setEditForm({ ...editForm, url: e.target.value })
-                            }
-                            placeholder="https://example.com"
-                            maxLength={MAX_URL_LENGTH}
-                            className={`w-full ${themeStyles.inputBackground} border ${themeStyles.inputBorder} rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all`}
-                          />
-                        </div>
-
-                        {/* Tags Field */}
-                        <div>
-                          <label className={`block text-sm font-medium mb-1 ${themeStyles.editLabelColor}`}>
-                            Tags (comma-separated)
-                          </label>
-                          <input
-                            type="text"
-                            value={editForm.tags}
-                            onChange={(e) =>
-                              setEditForm({ ...editForm, tags: e.target.value })
-                            }
-                            placeholder="tag1, tag2, tag3"
-                            className={`w-full ${themeStyles.inputBackground} border ${themeStyles.inputBorder} rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all`}
-                          />
-                        </div>
-
-                        {/* Directory Field */}
-                        <div>
-                          <label className={`block text-sm font-medium mb-1 ${themeStyles.editLabelColor}`}>
-                            Directory
-                          </label>
-                          <select
-                            value={editForm.directory}
-                            onChange={(e) =>
-                              setEditForm({
-                                ...editForm,
-                                directory: e.target.value,
-                              })
-                            }
-                            className={`w-full ${themeStyles.selectBackground} border ${themeStyles.selectBorder} rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all`}
-                          >
-                            {directories.map((dir) => (
-                              <option key={dir} value={dir}>
-                                {dir}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {/* Save/Cancel Buttons */}
-                        <div className="flex gap-2 pt-2">
-                          <button
-                            onClick={saveEditBookmark}
-                            className={`flex-1 flex items-center justify-center gap-2 ${themeStyles.buttonSuccess} rounded-lg px-4 py-2.5 font-semibold transition-all`}
-                          >
-                            <Save className="w-4 h-4" />
-                            Save Changes
-                          </button>
-                          <button
-                            onClick={cancelEdit}
-                            className={`flex-1 flex items-center justify-center gap-2 ${themeStyles.buttonNeutral} rounded-lg px-4 py-2.5 font-semibold transition-all`}
-                          >
-                            <X className="w-4 h-4" />
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      /* View Mode */
-                      <>
-                        <div
-                          className={`flex flex-col sm:flex-row justify-between items-start ${layout.bookmarkCardGap} mb-3`}
-                        >
-                          <div className="flex gap-3 flex-1 min-w-0">
-                            {/* Selection Checkbox */}
-                            <button
-                              onClick={() =>
-                                toggleBookmarkSelection(bookmark.id)
-                              }
-                              className={`mt-1 flex-shrink-0 ${themeStyles.textMuted} hover:text-blue-400 transition-colors`}
-                              aria-label={
-                                selectedBookmarks.has(bookmark.id)
-                                  ? "Deselect bookmark"
-                                  : "Select bookmark"
-                              }
-                            >
-                              {selectedBookmarks.has(bookmark.id) ? (
-                                <CheckSquare className={`w-5 h-5 ${themeStyles.iconCheckSelected}`} />
-                              ) : (
-                                <Square className="w-5 h-5" />
-                              )}
-                            </button>
-
-                            <div className="flex-1 min-w-0">
-                              <h3
-                                className={`${layout.bookmarkTitleSize} font-semibold mb-2 group-hover:text-blue-400 transition-colors truncate`}
-                              >
-                                {bookmark.title}
-                              </h3>
-                              <a
-                                href={bookmark.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className={`text-sm ${themeStyles.textLink} flex items-center gap-1.5 break-all`}
-                              >
-                                <ExternalLink className="w-4 h-4 flex-shrink-0" />
-                                {bookmark.url}
-                              </a>
-                            </div>
-                          </div>
-                          <div className="flex gap-2 flex-shrink-0">
-                            <button
-                              onClick={() => startEditBookmark(bookmark)}
-                              className={`p-2.5 ${themeStyles.editButton} ${layout.buttonRounded} transition-all shadow-lg`}
-                              title="Edit"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => toggleArchive(bookmark.id)}
-                              className={`p-2.5 ${
-                                layout.buttonRounded
-                              } transition-all shadow-lg ${
-                                bookmark.archived
-                                  ? themeStyles.archiveActive
-                                  : themeStyles.archiveInactive
-                              }`}
-                              title={
-                                bookmark.archived ? "Unarchive" : "Archive"
-                              }
-                            >
-                              <FolderOpen className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => deleteBookmark(bookmark.id)}
-                              className={`p-2.5 ${themeStyles.buttonDanger} ${layout.buttonRounded} transition-all shadow-lg`}
-                              title="Delete"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-
-                        {bookmark.tags.length > 0 && (
-                          <div
-                            className={`flex ${layout.tagGap} mb-4 flex-wrap`}
-                          >
-                            {bookmark.tags.map((tag, i) => (
-                              <span
-                                key={i}
-                                className={`flex items-center gap-1.5 ${layout.tagSize} font-medium ${themeStyles.tagBackground} ${layout.tagPadding} rounded-full border ${themeStyles.tagBorder}`}
-                              >
-                                <Tag className="w-3 h-3" />
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        {bookmark.directory && (
-                          <div className={`mb-3 flex items-center gap-2 text-sm ${themeStyles.textSecondary}`}>
-                            <Folder className={`w-4 h-4 ${themeStyles.iconFolder}`} />
-                            <span className="font-medium">
-                              {bookmark.directory}
-                            </span>
-                          </div>
-                        )}
-
-                        <div className={`text-xs ${themeStyles.textMuted} mt-3 flex items-center gap-2`}>
-                          <svg
-                            className="w-3.5 h-3.5"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                            />
-                          </svg>
-                          Added{" "}
-                          {new Date(bookmark.dateAdded).toLocaleDateString()}
-                        </div>
-                      </>
-                    )}
-                  </div>
+                  />
                 ))
               )}
             </div>

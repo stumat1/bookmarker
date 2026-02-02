@@ -65,6 +65,12 @@ export function getThemeStyles(theme) {
       errorText: "text-red-200",
       errorIcon: "text-red-400",
 
+      // Success message
+      successBackground: "bg-green-900/50",
+      successBorder: "border-green-700/50",
+      successText: "text-green-200",
+      successIcon: "text-green-400",
+
       // Directory styles
       directoryBackground: "bg-slate-900/50",
       directoryBorder: "border-slate-700/50",
@@ -122,19 +128,19 @@ export function getThemeStyles(theme) {
       selectBackground: "bg-white",
       selectBorder: "border-slate-300",
 
-      // Button styles
-      buttonPrimary: "bg-blue-500 text-white",
+      // Button styles (using darker shades for WCAG AA contrast with white text)
+      buttonPrimary: "bg-blue-600 text-white",
       buttonSecondary:
         "bg-white hover:bg-slate-50 border-slate-200 text-slate-700",
-      buttonSuccess: "bg-green-500 text-white",
+      buttonSuccess: "bg-green-600 text-white",
       buttonDanger:
-        "bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 text-white",
-      buttonWarning: "bg-orange-500 text-white",
+        "bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white",
+      buttonWarning: "bg-amber-600 text-white",
       buttonDisabled: "from-slate-300 to-slate-400",
       buttonNeutral: "bg-slate-100 hover:bg-slate-200 text-slate-700",
 
       // Filter button styles
-      filterActive: "bg-blue-500 text-white",
+      filterActive: "bg-blue-600 text-white",
       filterInactive:
         "bg-white hover:bg-slate-50 border border-slate-200 text-slate-700",
 
@@ -162,6 +168,12 @@ export function getThemeStyles(theme) {
       errorText: "text-red-700",
       errorIcon: "text-red-500",
 
+      // Success message
+      successBackground: "bg-green-50",
+      successBorder: "border-green-200",
+      successText: "text-green-700",
+      successIcon: "text-green-500",
+
       // Directory styles
       directoryBackground: "bg-slate-50",
       directoryBorder: "border-slate-200",
@@ -183,15 +195,15 @@ export function getThemeStyles(theme) {
       bulkUnarchive: "bg-blue-100 hover:bg-blue-200 text-blue-700",
       bulkDelete: "bg-red-100 hover:bg-red-200 text-red-700",
 
-      // Archive button states
+      // Archive button states (using 600 shades for WCAG AA contrast)
       archiveActive:
-        "bg-gradient-to-br from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 hover:shadow-green-300/50 text-white",
+        "bg-gradient-to-br from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 hover:shadow-green-300/50 text-white",
       archiveInactive:
         "bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-600",
 
-      // Edit button
+      // Edit button (using 600 shades for WCAG AA contrast)
       editButton:
-        "bg-gradient-to-br from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 hover:shadow-purple-300/50 text-white",
+        "bg-gradient-to-br from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 hover:shadow-purple-300/50 text-white",
 
       // Sort select
       sortSelect: "bg-white border-slate-200 text-slate-700",
