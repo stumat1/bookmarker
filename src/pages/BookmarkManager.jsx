@@ -23,7 +23,9 @@ import {
   X,
 } from "lucide-react";
 import { useLayout } from "../contexts/LayoutContext";
+import { useTheme } from "../contexts/ThemeContext";
 import { getLayoutStyles } from "../utils/layoutUtils";
+import { getThemeStyles } from "../utils/themeUtils";
 import {
   validateAndSanitizeURL,
   parseAndValidateTags,
@@ -37,7 +39,9 @@ import { bookmarkDB, directoryDB, initializeDB } from "../utils/db";
 
 export default function BookmarkManager() {
   const { layoutDensity } = useLayout();
+  const { theme } = useTheme();
   const layout = getLayoutStyles(layoutDensity);
+  const themeStyles = getThemeStyles(theme);
 
   // Maximum undo stack size to prevent memory issues
   const MAX_UNDO_STACK = 50;
@@ -81,7 +85,7 @@ export default function BookmarkManager() {
           console.warn(
             `Removed ${
               savedBookmarks.length - validBookmarks.length
-            } invalid bookmarks`
+            } invalid bookmarks`,
           );
         }
         setBookmarks(validBookmarks);
@@ -189,7 +193,7 @@ export default function BookmarkManager() {
       const existingBookmark = bookmarks.find((b) => b.url === validatedURL);
       if (existingBookmark) {
         const shouldAdd = window.confirm(
-          `A bookmark with this URL already exists:\n"${existingBookmark.title}"\n\nAdd anyway?`
+          `A bookmark with this URL already exists:\n"${existingBookmark.title}"\n\nAdd anyway?`,
         );
         if (!shouldAdd) {
           setLoading(false);
@@ -229,9 +233,9 @@ export default function BookmarkManager() {
 
           const response = await fetch(
             `https://api.allorigins.win/get?url=${encodeURIComponent(
-              validatedURL
+              validatedURL,
             )}`,
-            { signal: controller.signal }
+            { signal: controller.signal },
           );
           clearTimeout(timeoutId);
 
@@ -252,7 +256,7 @@ export default function BookmarkManager() {
                 return prev;
               }
               return prev.map((b) =>
-                b.id === bookmarkId ? { ...b, title: sanitizedTitle } : b
+                b.id === bookmarkId ? { ...b, title: sanitizedTitle } : b,
               );
             });
           }
@@ -279,7 +283,7 @@ export default function BookmarkManager() {
 
     if (
       window.confirm(
-        `Are you sure you want to delete "${bookmark.title}"? You can undo this action.`
+        `Are you sure you want to delete "${bookmark.title}"? You can undo this action.`,
       )
     ) {
       // Add to undo stack with size limit
@@ -294,7 +298,7 @@ export default function BookmarkManager() {
 
   const toggleArchive = (id) => {
     setBookmarks(
-      bookmarks.map((b) => (b.id === id ? { ...b, archived: !b.archived } : b))
+      bookmarks.map((b) => (b.id === id ? { ...b, archived: !b.archived } : b)),
     );
   };
 
@@ -344,11 +348,11 @@ export default function BookmarkManager() {
 
     if (
       window.confirm(
-        `Delete ${selectedBookmarks.size} selected bookmark(s)? You can undo this action.`
+        `Delete ${selectedBookmarks.size} selected bookmark(s)? You can undo this action.`,
       )
     ) {
       const deletedBookmarks = bookmarks.filter((b) =>
-        selectedBookmarks.has(b.id)
+        selectedBookmarks.has(b.id),
       );
 
       // Add to undo stack with size limit
@@ -369,8 +373,8 @@ export default function BookmarkManager() {
 
     setBookmarks(
       bookmarks.map((b) =>
-        selectedBookmarks.has(b.id) ? { ...b, archived: archive } : b
-      )
+        selectedBookmarks.has(b.id) ? { ...b, archived: archive } : b,
+      ),
     );
     setSelectedBookmarks(new Set());
   };
@@ -381,8 +385,8 @@ export default function BookmarkManager() {
 
     setBookmarks(
       bookmarks.map((b) =>
-        selectedBookmarks.has(b.id) ? { ...b, directory } : b
-      )
+        selectedBookmarks.has(b.id) ? { ...b, directory } : b,
+      ),
     );
     setSelectedBookmarks(new Set());
   };
@@ -416,8 +420,8 @@ export default function BookmarkManager() {
     // Move the bookmark to the new directory
     setBookmarks(
       bookmarks.map((b) =>
-        b.id === draggedBookmark.id ? { ...b, directory } : b
-      )
+        b.id === draggedBookmark.id ? { ...b, directory } : b,
+      ),
     );
 
     setDraggedBookmark(null);
@@ -468,8 +472,8 @@ export default function BookmarkManager() {
                 tags: validatedTags,
                 directory: editForm.directory || "Unsorted",
               }
-            : b
-        )
+            : b,
+        ),
       );
 
       // Clear edit mode
@@ -505,7 +509,7 @@ export default function BookmarkManager() {
     }
 
     const bookmarkCount = bookmarks.filter(
-      (b) => b.directory === dirName
+      (b) => b.directory === dirName,
     ).length;
     const message =
       bookmarkCount > 0
@@ -517,8 +521,8 @@ export default function BookmarkManager() {
       // Move bookmarks from deleted directory to Unsorted
       setBookmarks(
         bookmarks.map((b) =>
-          b.directory === dirName ? { ...b, directory: "Unsorted" } : b
-        )
+          b.directory === dirName ? { ...b, directory: "Unsorted" } : b,
+        ),
       );
     }
   };
@@ -612,7 +616,7 @@ export default function BookmarkManager() {
           `Import ${remappedBookmarks.length} bookmark(s)?\n\n` +
             `• Click OK to MERGE with existing (${bookmarks.length} current bookmarks)\n` +
             `• Click Cancel to REPLACE ALL (⚠️ WARNING: will delete all existing bookmarks)\n\n` +
-            `Recommended: Click OK to merge safely.`
+            `Recommended: Click OK to merge safely.`,
         );
 
         if (shouldMerge) {
@@ -620,14 +624,28 @@ export default function BookmarkManager() {
           const mergedBookmarks = [...bookmarks];
           const existingIds = new Set(bookmarks.map((b) => b.id));
 
+          // Counter for generating unique IDs when collisions occur
+          let idCounter = 0;
+
           remappedBookmarks.forEach((bookmark) => {
-            // Generate new unique integer ID if collision detected
             let newId = bookmark.id;
             if (existingIds.has(newId)) {
-              // Generate truly unique integer ID
-              newId = Math.floor(Date.now() + Math.random() * 1000000);
-              while (existingIds.has(newId)) {
-                newId = Math.floor(Date.now() + Math.random() * 1000000);
+              // Generate unique integer ID using timestamp + counter
+              // This approach guarantees uniqueness and prevents infinite loops
+              const MAX_ATTEMPTS = 1000;
+              let attempts = 0;
+              do {
+                // Use crypto.getRandomValues for better randomness, fallback to Math.random
+                const randomPart = typeof crypto !== "undefined" && crypto.getRandomValues
+                  ? crypto.getRandomValues(new Uint32Array(1))[0]
+                  : Math.floor(Math.random() * 0xFFFFFFFF);
+                newId = Date.now() * 1000 + (randomPart % 1000) + idCounter++;
+                attempts++;
+              } while (existingIds.has(newId) && attempts < MAX_ATTEMPTS);
+
+              if (attempts >= MAX_ATTEMPTS) {
+                console.error("Failed to generate unique ID after max attempts");
+                return; // Skip this bookmark
               }
             }
             existingIds.add(newId);
@@ -669,7 +687,8 @@ export default function BookmarkManager() {
       const matchesSearch =
         b.title.toLowerCase().includes(lowerSearchTerm) ||
         b.url.toLowerCase().includes(lowerSearchTerm) ||
-        (Array.isArray(b.tags) && b.tags.some((t) => t.toLowerCase().includes(lowerSearchTerm)));
+        (Array.isArray(b.tags) &&
+          b.tags.some((t) => t.toLowerCase().includes(lowerSearchTerm)));
 
       if (filter === "archived") return b.archived && matchesSearch;
       if (filter === "unread") return !b.archived && matchesSearch;
@@ -698,46 +717,45 @@ export default function BookmarkManager() {
 
   return (
     <div
-      className={`min-h-screen bg-gradient-to-br from-indigo-950 via-slate-900 to-purple-950 text-white ${layout.pagePadding}`}
+      className={`min-h-screen ${themeStyles.pageBackground} ${themeStyles.textPrimary} ${layout.pagePadding}`}
     >
       <div className="max-w-7xl mx-auto">
         <div className={`${layout.headerMargin} text-center relative`}>
           <div className="flex items-center justify-center gap-3 mb-3">
             <img
               src="/logo.png"
-              alt="Bookmark Triave Logo"
+              alt="Bookmarker Logo"
               className={`${layout.logoSize} object-contain`}
             />
             <h1
-              className={`${layout.titleSize} font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent`}
+              className={`${layout.titleSize} font-bold ${themeStyles.headerGradient}`}
             >
-              Bookmark Triave
+              Bookmarker
             </h1>
           </div>
-          <p className={`text-slate-300 ${layout.subtitleSize}`}>
+          <p className={`${themeStyles.textSecondary} ${layout.subtitleSize}`}>
             Save now, decide later. Organize your reading list efficiently.
           </p>
 
           {/* Settings link in top right */}
           <Link
             to="/settings"
-            className={`absolute top-0 right-0 flex items-center gap-2 ${layout.buttonPadding} bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/50 ${layout.buttonRounded} transition-all group`}
+            className={`absolute top-0 right-0 flex items-center gap-2 ${layout.buttonPadding} ${themeStyles.buttonSecondary} border ${themeStyles.cardBorder} ${layout.buttonRounded} transition-all group`}
           >
             <SettingsIcon className="w-5 h-5 group-hover:rotate-45 transition-transform" />
-            <span className="font-medium">Settings</span>
           </Link>
         </div>
 
         {/* Error Message Display */}
         {errorMessage && (
-          <div className="mb-6 bg-red-900/50 backdrop-blur-xl rounded-xl p-4 border border-red-700/50 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+          <div className={`mb-6 ${themeStyles.errorBackground} backdrop-blur-xl rounded-xl p-4 border ${themeStyles.errorBorder} flex items-start gap-3`}>
+            <AlertCircle className={`w-5 h-5 ${themeStyles.errorIcon} flex-shrink-0 mt-0.5`} />
             <div className="flex-1">
-              <p className="text-red-200 font-medium">{errorMessage}</p>
+              <p className={`${themeStyles.errorText} font-medium`}>{errorMessage}</p>
             </div>
             <button
               onClick={() => setErrorMessage("")}
-              className="text-red-300 hover:text-red-100 transition-colors"
+              className={`${themeStyles.errorIcon} hover:opacity-70 transition-colors`}
               aria-label="Dismiss error"
             >
               ×
@@ -749,12 +767,12 @@ export default function BookmarkManager() {
         <div className="mb-6 flex flex-wrap gap-3 justify-center items-center">
           <button
             onClick={exportBookmarks}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-lg font-semibold transition-all transform hover:scale-105 shadow-lg"
+            className={`flex items-center gap-2 px-4 py-2 ${themeStyles.buttonSuccess} rounded-lg font-semibold`}
           >
             <Download className="w-4 h-4" />
             Export Bookmarks
           </button>
-          <label className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 rounded-lg font-semibold transition-all transform hover:scale-105 shadow-lg cursor-pointer">
+          <label className={`flex items-center gap-2 px-4 py-2 ${themeStyles.buttonPrimary} rounded-lg font-semibold cursor-pointer`}>
             <Upload className="w-4 h-4" />
             Import Bookmarks
             <input
@@ -767,7 +785,7 @@ export default function BookmarkManager() {
           <button
             onClick={handleUndo}
             disabled={undoStack.length === 0}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 disabled:from-slate-600 disabled:to-slate-700 disabled:cursor-not-allowed rounded-lg font-semibold transition-all transform hover:scale-105 shadow-lg disabled:transform-none"
+            className={`flex items-center gap-2 px-4 py-2 ${themeStyles.buttonWarning} disabled:${themeStyles.buttonDisabled} disabled:cursor-not-allowed rounded-lg font-semibold disabled:transform-none`}
             title={
               undoStack.length > 0
                 ? `Undo (${undoStack.length} action${
@@ -779,7 +797,7 @@ export default function BookmarkManager() {
             <Undo className="w-4 h-4" />
             Undo {undoStack.length > 0 && `(${undoStack.length})`}
           </button>
-          <div className="text-sm text-slate-400 flex items-center">
+          <div className={`text-sm ${themeStyles.textMuted} flex items-center`}>
             <Bookmark className="w-4 h-4 mr-1" />
             {bookmarks.length} bookmark{bookmarks.length !== 1 ? "s" : ""}
           </div>
@@ -790,17 +808,17 @@ export default function BookmarkManager() {
           {/* Left Column - Add Bookmark Form */}
           <div className={`lg:col-span-1 ${layout.cardGap}`}>
             <div
-              className={`bg-slate-800/60 backdrop-blur-xl ${layout.cardRounded} ${layout.cardPadding} border border-slate-700/50 shadow-2xl shadow-purple-900/20 ${layout.stickyTop} lg:sticky`}
+              className={`${themeStyles.cardBackground} ${layout.cardRounded} ${layout.cardPadding} border ${themeStyles.cardBorder} ${themeStyles.cardShadow} ${layout.stickyTop} lg:sticky`}
             >
               <h2
-                className={`${layout.bookmarkTitleSize} font-semibold ${layout.labelMargin} text-slate-200`}
+                className={`${layout.bookmarkTitleSize} font-semibold ${layout.labelMargin} ${themeStyles.textSecondary}`}
               >
                 Add Bookmark
               </h2>
               <div className={layout.cardGap}>
                 <div>
                   <label
-                    className={`block ${layout.labelSize} font-semibold ${layout.labelMargin} text-slate-200`}
+                    className={`block ${layout.labelSize} font-semibold ${layout.labelMargin} ${themeStyles.textSecondary}`}
                   >
                     URL
                   </label>
@@ -812,10 +830,10 @@ export default function BookmarkManager() {
                     placeholder="https://example.com/article"
                     maxLength={MAX_URL_LENGTH}
                     required
-                    className={`w-full bg-slate-900/80 border border-slate-600 ${layout.inputRounded} ${layout.inputPadding} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all placeholder:text-slate-500`}
+                    className={`w-full ${themeStyles.inputBackground} border ${themeStyles.inputBorder} ${layout.inputRounded} ${layout.inputPadding} focus:outline-none focus:ring-2 ${themeStyles.inputFocus} focus:border-transparent transition-all ${themeStyles.inputPlaceholder}`}
                   />
                   <div className="flex justify-between items-center mt-1">
-                    <p className="text-xs text-slate-400">
+                    <p className={`text-xs ${themeStyles.textMuted}`}>
                       Enter a valid http:// or https:// URL
                     </p>
                     {url.length > MAX_URL_LENGTH - 200 && (
@@ -833,7 +851,7 @@ export default function BookmarkManager() {
                 </div>
                 <div>
                   <label
-                    className={`block ${layout.labelSize} font-semibold ${layout.labelMargin} text-slate-200`}
+                    className={`block ${layout.labelSize} font-semibold ${layout.labelMargin} ${themeStyles.textSecondary}`}
                   >
                     Tags (comma-separated)
                   </label>
@@ -844,7 +862,7 @@ export default function BookmarkManager() {
                     onKeyDown={(e) => e.key === "Enter" && addBookmark()}
                     placeholder="tech, programming, tutorial"
                     maxLength={MAX_TAG_LENGTH * 10}
-                    className={`w-full bg-slate-900/80 border border-slate-600 ${layout.inputRounded} ${layout.inputPadding} focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all placeholder:text-slate-500`}
+                    className={`w-full ${themeStyles.inputBackground} border ${themeStyles.inputBorder} ${layout.inputRounded} ${layout.inputPadding} focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${themeStyles.inputPlaceholder}`}
                   />
                   {tags.length > MAX_TAG_LENGTH * 5 && (
                     <p
@@ -860,14 +878,14 @@ export default function BookmarkManager() {
                 </div>
                 <div>
                   <label
-                    className={`block ${layout.labelSize} font-semibold ${layout.labelMargin} text-slate-200`}
+                    className={`block ${layout.labelSize} font-semibold ${layout.labelMargin} ${themeStyles.textSecondary}`}
                   >
                     Directory
                   </label>
                   <select
                     value={selectedDirectory}
                     onChange={(e) => setSelectedDirectory(e.target.value)}
-                    className={`w-full bg-slate-900/80 border border-slate-600 ${layout.inputRounded} ${layout.inputPadding} focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all`}
+                    className={`w-full ${themeStyles.selectBackground} border ${themeStyles.selectBorder} ${layout.inputRounded} ${layout.inputPadding} focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all`}
                   >
                     {directories.map((dir) => (
                       <option key={dir} value={dir}>
@@ -879,7 +897,7 @@ export default function BookmarkManager() {
                 <button
                   onClick={addBookmark}
                   disabled={loading}
-                  className={`w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-slate-600 disabled:to-slate-700 ${layout.buttonRounded} ${layout.buttonPadding} font-semibold transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg disabled:transform-none disabled:cursor-not-allowed`}
+                  className={`w-full ${themeStyles.buttonPrimary} disabled:${themeStyles.buttonDisabled} ${layout.buttonRounded} ${layout.buttonPadding} font-semibold disabled:transform-none disabled:cursor-not-allowed`}
                 >
                   {loading ? (
                     <span className="flex items-center justify-center gap-2">
@@ -910,10 +928,10 @@ export default function BookmarkManager() {
 
             {/* Directory Management */}
             <div
-              className={`bg-slate-800/60 backdrop-blur-xl ${layout.cardRounded} ${layout.cardPadding} border border-slate-700/50 shadow-2xl shadow-purple-900/20 ${layout.stickyTop} lg:sticky`}
+              className={`${themeStyles.cardBackground} ${layout.cardRounded} ${layout.cardPadding} border ${themeStyles.cardBorder} ${themeStyles.cardShadow} ${layout.stickyTop} lg:sticky`}
             >
               <h2
-                className={`${layout.bookmarkTitleSize} font-semibold ${layout.labelMargin} text-slate-200 flex items-center gap-2`}
+                className={`${layout.bookmarkTitleSize} font-semibold ${layout.labelMargin} ${themeStyles.textSecondary} flex items-center gap-2`}
               >
                 <FolderPlus className="w-5 h-5" />
                 Directories
@@ -926,11 +944,11 @@ export default function BookmarkManager() {
                     onChange={(e) => setNewDirectory(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && addDirectory()}
                     placeholder="New directory name"
-                    className={`flex-1 bg-slate-900/80 border border-slate-600 ${layout.inputRounded} ${layout.inputPadding} focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all placeholder:text-slate-500`}
+                    className={`flex-1 ${themeStyles.inputBackground} border ${themeStyles.inputBorder} ${layout.inputRounded} ${layout.inputPadding} focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${themeStyles.inputPlaceholder}`}
                   />
                   <button
                     onClick={addDirectory}
-                    className={`bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 ${layout.buttonRounded} ${layout.buttonPadding} font-semibold transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg`}
+                    className={`${themeStyles.buttonSuccess} ${layout.buttonRounded} ${layout.buttonPadding} font-semibold transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg`}
                     title="Add Directory"
                   >
                     <FolderPlus className="w-5 h-5" />
@@ -939,30 +957,30 @@ export default function BookmarkManager() {
 
                 <div className="space-y-2 max-h-64 overflow-y-auto">
                   {directories.length === 0 ? (
-                    <p className="text-sm text-slate-400 text-center py-4">
+                    <p className={`text-sm ${themeStyles.textMuted} text-center py-4`}>
                       No directories yet
                     </p>
                   ) : (
                     directories.map((dir) => (
                       <div
                         key={dir}
-                        className={`flex items-center justify-between bg-slate-900/50 ${
+                        className={`flex items-center justify-between ${themeStyles.directoryBackground} ${
                           layout.directoryItemRounded
                         } ${
                           layout.directoryItemPadding
                         } border transition-all ${
                           dropTarget === dir
-                            ? "border-green-500 bg-green-900/30 shadow-lg shadow-green-500/30"
-                            : "border-slate-700/50 hover:border-slate-600"
+                            ? themeStyles.directoryDropTarget
+                            : `${themeStyles.directoryBorder} ${themeStyles.directoryHover}`
                         }`}
                         onDragOver={(e) => handleDragOver(e, dir)}
                         onDragLeave={handleDragLeave}
                         onDrop={(e) => handleDrop(e, dir)}
                       >
-                        <div className="flex items-center gap-2 text-slate-200">
-                          <Folder className="w-4 h-4 text-yellow-400" />
+                        <div className={`flex items-center gap-2 ${themeStyles.textSecondary}`}>
+                          <Folder className={`w-4 h-4 ${themeStyles.iconFolder}`} />
                           <span className="font-medium">{dir}</span>
-                          <span className="text-xs text-slate-500">
+                          <span className={`text-xs ${themeStyles.textMuted}`}>
                             (
                             {
                               bookmarks.filter((b) => b.directory === dir)
@@ -993,13 +1011,13 @@ export default function BookmarkManager() {
               className={`flex flex-col sm:flex-row gap-4 ${layout.headerMargin}`}
             >
               <div className="flex-1 relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <Search className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 ${themeStyles.textMuted}`} />
                 <input
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="Search bookmarks..."
-                  className={`w-full bg-slate-800/60 border border-slate-700/50 ${layout.filterButtonRounded} pl-12 pr-4 ${layout.inputPadding} focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all placeholder:text-slate-500`}
+                  className={`w-full ${themeStyles.cardBackground} border ${themeStyles.cardBorder} ${layout.filterButtonRounded} pl-12 pr-4 ${layout.inputPadding} focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all ${themeStyles.inputPlaceholder}`}
                 />
               </div>
               <div className="flex gap-2 justify-center sm:justify-start">
@@ -1009,8 +1027,8 @@ export default function BookmarkManager() {
                     layout.filterButtonRounded
                   } font-medium transition-all ${
                     filter === "all"
-                      ? "bg-gradient-to-r from-blue-600 to-purple-600 shadow-lg shadow-blue-500/30"
-                      : "bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600/50"
+                      ? themeStyles.filterActive
+                      : themeStyles.filterInactive
                   }`}
                 >
                   All
@@ -1021,8 +1039,8 @@ export default function BookmarkManager() {
                     layout.filterButtonRounded
                   } font-medium transition-all ${
                     filter === "unread"
-                      ? "bg-gradient-to-r from-blue-600 to-purple-600 shadow-lg shadow-blue-500/30"
-                      : "bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600/50"
+                      ? themeStyles.filterActive
+                      : themeStyles.filterInactive
                   }`}
                 >
                   Unread
@@ -1033,8 +1051,8 @@ export default function BookmarkManager() {
                     layout.filterButtonRounded
                   } font-medium transition-all ${
                     filter === "archived"
-                      ? "bg-gradient-to-r from-blue-600 to-purple-600 shadow-lg shadow-blue-500/30"
-                      : "bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600/50"
+                      ? themeStyles.filterActive
+                      : themeStyles.filterInactive
                   }`}
                 >
                   Archived
@@ -1046,11 +1064,11 @@ export default function BookmarkManager() {
             <div className="flex flex-col sm:flex-row gap-3 mt-4 mb-4">
               {/* Sort Dropdown */}
               <div className="flex items-center gap-2">
-                <ArrowUpDown className="w-4 h-4 text-slate-400" />
+                <ArrowUpDown className={`w-4 h-4 ${themeStyles.textMuted}`} />
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
-                  className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                  className={`${themeStyles.sortSelect} rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all`}
                 >
                   <option value="date-desc">Newest First</option>
                   <option value="date-asc">Oldest First</option>
@@ -1063,25 +1081,25 @@ export default function BookmarkManager() {
               <div className="flex items-center gap-2 flex-1 justify-end flex-wrap">
                 {selectedBookmarks.size > 0 ? (
                   <>
-                    <span className="text-sm text-slate-300">
+                    <span className={`text-sm ${themeStyles.textSecondary}`}>
                       {selectedBookmarks.size} selected
                     </span>
                     <button
                       onClick={clearSelection}
-                      className="px-3 py-1.5 text-sm bg-slate-700/50 hover:bg-slate-600/50 rounded-lg transition-all"
+                      className={`px-3 py-1.5 text-sm ${themeStyles.buttonNeutral} rounded-lg transition-all`}
                     >
                       Clear
                     </button>
                     <button
                       onClick={() => bulkArchiveBookmarks(true)}
-                      className="px-3 py-1.5 text-sm bg-green-700/50 hover:bg-green-600/50 rounded-lg transition-all flex items-center gap-1"
+                      className={`px-3 py-1.5 text-sm ${themeStyles.bulkArchive} rounded-lg transition-all flex items-center gap-1`}
                     >
                       <Archive className="w-3.5 h-3.5" />
                       Archive
                     </button>
                     <button
                       onClick={() => bulkArchiveBookmarks(false)}
-                      className="px-3 py-1.5 text-sm bg-blue-700/50 hover:bg-blue-600/50 rounded-lg transition-all flex items-center gap-1"
+                      className={`px-3 py-1.5 text-sm ${themeStyles.bulkUnarchive} rounded-lg transition-all flex items-center gap-1`}
                     >
                       <FolderOpen className="w-3.5 h-3.5" />
                       Unarchive
@@ -1093,7 +1111,7 @@ export default function BookmarkManager() {
                         }
                       }}
                       value=""
-                      className="px-3 py-1.5 text-sm bg-slate-700/50 hover:bg-slate-600/50 rounded-lg transition-all"
+                      className={`px-3 py-1.5 text-sm ${themeStyles.buttonNeutral} rounded-lg transition-all`}
                     >
                       <option value="">Move to...</option>
                       {directories.map((dir) => (
@@ -1104,7 +1122,7 @@ export default function BookmarkManager() {
                     </select>
                     <button
                       onClick={bulkDeleteBookmarks}
-                      className="px-3 py-1.5 text-sm bg-red-700/50 hover:bg-red-600/50 rounded-lg transition-all flex items-center gap-1"
+                      className={`px-3 py-1.5 text-sm ${themeStyles.bulkDelete} rounded-lg transition-all flex items-center gap-1`}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       Delete
@@ -1114,7 +1132,7 @@ export default function BookmarkManager() {
                   <button
                     onClick={selectAllBookmarks}
                     disabled={filteredBookmarks.length === 0}
-                    className="px-3 py-1.5 text-sm bg-slate-700/50 hover:bg-slate-600/50 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-all flex items-center gap-1"
+                    className={`px-3 py-1.5 text-sm ${themeStyles.buttonNeutral} disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-all flex items-center gap-1`}
                   >
                     <CheckSquare className="w-3.5 h-3.5" />
                     Select All
@@ -1127,7 +1145,7 @@ export default function BookmarkManager() {
             <div className={layout.bookmarkSpacing}>
               {filteredBookmarks.length === 0 ? (
                 <div
-                  className={`text-center py-16 text-slate-400 bg-slate-800/30 ${layout.cardRounded} border border-slate-700/50`}
+                  className={`text-center py-16 ${themeStyles.textMuted} ${themeStyles.emptyStateBackground} ${layout.cardRounded} border ${themeStyles.emptyStateBorder}`}
                 >
                   <FolderOpen className="w-20 h-20 mx-auto mb-4 opacity-40" />
                   <p className="text-lg">
@@ -1141,17 +1159,17 @@ export default function BookmarkManager() {
                     draggable={editingBookmark !== bookmark.id}
                     onDragStart={(e) => handleDragStart(e, bookmark)}
                     onDragEnd={handleDragEnd}
-                    className={`bg-slate-800/50 backdrop-blur-xl ${
+                    className={`${themeStyles.bookmarkCardBackground} ${
                       layout.bookmarkCardRounded
                     } ${
                       layout.bookmarkCardPadding
-                    } border border-slate-700/50 hover:border-slate-600/80 hover:shadow-xl hover:shadow-purple-900/10 transition-all group ${
+                    } border ${themeStyles.bookmarkCardBorder} ${themeStyles.cardHover} transition-all group ${
                       selectedBookmarks.has(bookmark.id)
-                        ? "ring-2 ring-blue-500/50"
+                        ? themeStyles.bookmarkCardSelected
                         : ""
                     } ${
                       editingBookmark === bookmark.id
-                        ? "ring-2 ring-purple-500/50"
+                        ? themeStyles.bookmarkCardEditing
                         : ""
                     } ${
                       draggedBookmark?.id === bookmark.id
@@ -1163,12 +1181,12 @@ export default function BookmarkManager() {
                       /* Edit Mode */
                       <div className="space-y-4">
                         <div className="flex items-center justify-between mb-4">
-                          <h3 className="text-lg font-semibold text-purple-300">
+                          <h3 className={`text-lg font-semibold ${themeStyles.editTitleColor}`}>
                             Edit Bookmark
                           </h3>
                           <button
                             onClick={cancelEdit}
-                            className="text-slate-400 hover:text-slate-200 transition-colors"
+                            className={`${themeStyles.textMuted} hover:${themeStyles.textSecondary} transition-colors`}
                             title="Cancel editing"
                           >
                             <X className="w-5 h-5" />
@@ -1177,7 +1195,7 @@ export default function BookmarkManager() {
 
                         {/* Title Field */}
                         <div>
-                          <label className="block text-sm font-medium mb-1 text-slate-300">
+                          <label className={`block text-sm font-medium mb-1 ${themeStyles.editLabelColor}`}>
                             Title
                           </label>
                           <input
@@ -1190,13 +1208,13 @@ export default function BookmarkManager() {
                               })
                             }
                             placeholder="Bookmark title"
-                            className="w-full bg-slate-900/80 border border-slate-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                            className={`w-full ${themeStyles.inputBackground} border ${themeStyles.inputBorder} rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all`}
                           />
                         </div>
 
                         {/* URL Field */}
                         <div>
-                          <label className="block text-sm font-medium mb-1 text-slate-300">
+                          <label className={`block text-sm font-medium mb-1 ${themeStyles.editLabelColor}`}>
                             URL
                           </label>
                           <input
@@ -1207,13 +1225,13 @@ export default function BookmarkManager() {
                             }
                             placeholder="https://example.com"
                             maxLength={MAX_URL_LENGTH}
-                            className="w-full bg-slate-900/80 border border-slate-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                            className={`w-full ${themeStyles.inputBackground} border ${themeStyles.inputBorder} rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all`}
                           />
                         </div>
 
                         {/* Tags Field */}
                         <div>
-                          <label className="block text-sm font-medium mb-1 text-slate-300">
+                          <label className={`block text-sm font-medium mb-1 ${themeStyles.editLabelColor}`}>
                             Tags (comma-separated)
                           </label>
                           <input
@@ -1223,13 +1241,13 @@ export default function BookmarkManager() {
                               setEditForm({ ...editForm, tags: e.target.value })
                             }
                             placeholder="tag1, tag2, tag3"
-                            className="w-full bg-slate-900/80 border border-slate-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                            className={`w-full ${themeStyles.inputBackground} border ${themeStyles.inputBorder} rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all`}
                           />
                         </div>
 
                         {/* Directory Field */}
                         <div>
-                          <label className="block text-sm font-medium mb-1 text-slate-300">
+                          <label className={`block text-sm font-medium mb-1 ${themeStyles.editLabelColor}`}>
                             Directory
                           </label>
                           <select
@@ -1240,7 +1258,7 @@ export default function BookmarkManager() {
                                 directory: e.target.value,
                               })
                             }
-                            className="w-full bg-slate-900/80 border border-slate-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                            className={`w-full ${themeStyles.selectBackground} border ${themeStyles.selectBorder} rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all`}
                           >
                             {directories.map((dir) => (
                               <option key={dir} value={dir}>
@@ -1254,14 +1272,14 @@ export default function BookmarkManager() {
                         <div className="flex gap-2 pt-2">
                           <button
                             onClick={saveEditBookmark}
-                            className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-lg px-4 py-2.5 font-semibold transition-all"
+                            className={`flex-1 flex items-center justify-center gap-2 ${themeStyles.buttonSuccess} rounded-lg px-4 py-2.5 font-semibold transition-all`}
                           >
                             <Save className="w-4 h-4" />
                             Save Changes
                           </button>
                           <button
                             onClick={cancelEdit}
-                            className="flex-1 flex items-center justify-center gap-2 bg-slate-600/50 hover:bg-slate-500/50 rounded-lg px-4 py-2.5 font-semibold transition-all"
+                            className={`flex-1 flex items-center justify-center gap-2 ${themeStyles.buttonNeutral} rounded-lg px-4 py-2.5 font-semibold transition-all`}
                           >
                             <X className="w-4 h-4" />
                             Cancel
@@ -1280,7 +1298,7 @@ export default function BookmarkManager() {
                               onClick={() =>
                                 toggleBookmarkSelection(bookmark.id)
                               }
-                              className="mt-1 flex-shrink-0 text-slate-400 hover:text-blue-400 transition-colors"
+                              className={`mt-1 flex-shrink-0 ${themeStyles.textMuted} hover:text-blue-400 transition-colors`}
                               aria-label={
                                 selectedBookmarks.has(bookmark.id)
                                   ? "Deselect bookmark"
@@ -1288,7 +1306,7 @@ export default function BookmarkManager() {
                               }
                             >
                               {selectedBookmarks.has(bookmark.id) ? (
-                                <CheckSquare className="w-5 h-5 text-blue-400" />
+                                <CheckSquare className={`w-5 h-5 ${themeStyles.iconCheckSelected}`} />
                               ) : (
                                 <Square className="w-5 h-5" />
                               )}
@@ -1296,7 +1314,7 @@ export default function BookmarkManager() {
 
                             <div className="flex-1 min-w-0">
                               <h3
-                                className={`${layout.bookmarkTitleSize} font-semibold mb-2 group-hover:text-blue-300 transition-colors truncate`}
+                                className={`${layout.bookmarkTitleSize} font-semibold mb-2 group-hover:text-blue-400 transition-colors truncate`}
                               >
                                 {bookmark.title}
                               </h3>
@@ -1304,7 +1322,7 @@ export default function BookmarkManager() {
                                 href={bookmark.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-sm text-blue-400 hover:text-blue-300 flex items-center gap-1.5 break-all"
+                                className={`text-sm ${themeStyles.textLink} flex items-center gap-1.5 break-all`}
                               >
                                 <ExternalLink className="w-4 h-4 flex-shrink-0" />
                                 {bookmark.url}
@@ -1314,7 +1332,7 @@ export default function BookmarkManager() {
                           <div className="flex gap-2 flex-shrink-0">
                             <button
                               onClick={() => startEditBookmark(bookmark)}
-                              className={`p-2.5 bg-gradient-to-br from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 ${layout.buttonRounded} transition-all shadow-lg hover:shadow-purple-500/30`}
+                              className={`p-2.5 ${themeStyles.editButton} ${layout.buttonRounded} transition-all shadow-lg`}
                               title="Edit"
                             >
                               <Edit className="w-4 h-4" />
@@ -1325,8 +1343,8 @@ export default function BookmarkManager() {
                                 layout.buttonRounded
                               } transition-all shadow-lg ${
                                 bookmark.archived
-                                  ? "bg-gradient-to-br from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 hover:shadow-green-500/30"
-                                  : "bg-slate-600/50 hover:bg-slate-500/50 border border-slate-600"
+                                  ? themeStyles.archiveActive
+                                  : themeStyles.archiveInactive
                               }`}
                               title={
                                 bookmark.archived ? "Unarchive" : "Archive"
@@ -1336,7 +1354,7 @@ export default function BookmarkManager() {
                             </button>
                             <button
                               onClick={() => deleteBookmark(bookmark.id)}
-                              className={`p-2.5 bg-gradient-to-br from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 ${layout.buttonRounded} transition-all shadow-lg hover:shadow-red-500/30`}
+                              className={`p-2.5 ${themeStyles.buttonDanger} ${layout.buttonRounded} transition-all shadow-lg`}
                               title="Delete"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -1351,7 +1369,7 @@ export default function BookmarkManager() {
                             {bookmark.tags.map((tag, i) => (
                               <span
                                 key={i}
-                                className={`flex items-center gap-1.5 ${layout.tagSize} font-medium bg-gradient-to-br from-slate-700 to-slate-800 ${layout.tagPadding} rounded-full border border-slate-600/50`}
+                                className={`flex items-center gap-1.5 ${layout.tagSize} font-medium ${themeStyles.tagBackground} ${layout.tagPadding} rounded-full border ${themeStyles.tagBorder}`}
                               >
                                 <Tag className="w-3 h-3" />
                                 {tag}
@@ -1361,15 +1379,15 @@ export default function BookmarkManager() {
                         )}
 
                         {bookmark.directory && (
-                          <div className="mb-3 flex items-center gap-2 text-sm text-slate-300">
-                            <Folder className="w-4 h-4 text-yellow-400" />
+                          <div className={`mb-3 flex items-center gap-2 text-sm ${themeStyles.textSecondary}`}>
+                            <Folder className={`w-4 h-4 ${themeStyles.iconFolder}`} />
                             <span className="font-medium">
                               {bookmark.directory}
                             </span>
                           </div>
                         )}
 
-                        <div className="text-xs text-slate-400 mt-3 flex items-center gap-2">
+                        <div className={`text-xs ${themeStyles.textMuted} mt-3 flex items-center gap-2`}>
                           <svg
                             className="w-3.5 h-3.5"
                             fill="none"
