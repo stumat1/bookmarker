@@ -1,4 +1,4 @@
-# Bookmark Triave
+# Bookmarker
 
 Privacy-focused smart bookmark manager. 100% client-side with IndexedDB storage.
 
@@ -33,9 +33,9 @@ src/
 ## Database Schema
 
 ```javascript
-bookmarks: "++id, url, title, directory, archived, dateAdded, *tags"
-directories: "++id, name"
-settings: "key, value"
+bookmarks: "++id, url, title, directory, archived, dateAdded, *tags";
+directories: "++id, name";
+settings: "key, value";
 ```
 
 ## Commands

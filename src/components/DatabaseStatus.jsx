@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { bookmarkDB, directoryDB, settingsDB } from "../utils/db";
 import { Database, CheckCircle, XCircle, RefreshCw } from "lucide-react";
+import { useTheme } from "../contexts/ThemeContext";
+import { getThemeStyles } from "../utils/themeUtils";
 
 export default function DatabaseStatus() {
+  const { theme } = useTheme();
+  const themeStyles = getThemeStyles(theme);
+
   const [status, setStatus] = useState({
     bookmarkCount: 0,
     directoryCount: 0,
@@ -42,8 +47,8 @@ export default function DatabaseStatus() {
 
   if (status.loading) {
     return (
-      <div className="bg-slate-800/60 backdrop-blur-xl rounded-lg p-4 border border-slate-700/50">
-        <div className="flex items-center gap-2 text-slate-300">
+      <div className={`${themeStyles.cardBackground} rounded-lg p-4 border ${themeStyles.cardBorder}`}>
+        <div className={`flex items-center gap-2 ${themeStyles.textSecondary}`}>
           <Database className="w-5 h-5 animate-pulse" />
           <span>Loading database status...</span>
         </div>
@@ -52,18 +57,18 @@ export default function DatabaseStatus() {
   }
 
   return (
-    <div className="bg-slate-800/60 backdrop-blur-xl rounded-lg p-4 border border-slate-700/50">
+    <div className={`${themeStyles.cardBackground} rounded-lg p-4 border ${themeStyles.cardBorder}`}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <Database className="w-5 h-5 text-blue-400" />
-          <h3 className="font-semibold text-white">IndexedDB Status</h3>
+          <h3 className={`font-semibold ${themeStyles.textPrimary}`}>IndexedDB Status</h3>
         </div>
         <button
           onClick={loadStatus}
-          className="p-1 hover:bg-slate-700 rounded transition-colors"
+          className={`p-1 ${themeStyles.buttonNeutral} rounded transition-colors`}
           title="Refresh status"
         >
-          <RefreshCw className="w-4 h-4 text-slate-400" />
+          <RefreshCw className={`w-4 h-4 ${themeStyles.textMuted}`} />
         </button>
       </div>
 
@@ -78,19 +83,19 @@ export default function DatabaseStatus() {
       ) : (
         <div className="space-y-2 text-sm">
           <div className="flex items-center justify-between">
-            <span className="text-slate-300">Bookmarks:</span>
-            <span className="font-semibold text-white">
+            <span className={themeStyles.textSecondary}>Bookmarks:</span>
+            <span className={`font-semibold ${themeStyles.textPrimary}`}>
               {status.bookmarkCount}
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-slate-300">Directories:</span>
-            <span className="font-semibold text-white">
+            <span className={themeStyles.textSecondary}>Directories:</span>
+            <span className={`font-semibold ${themeStyles.textPrimary}`}>
               {status.directoryCount}
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-slate-300">Migration:</span>
+            <span className={themeStyles.textSecondary}>Migration:</span>
             <div className="flex items-center gap-1">
               {status.migrated ? (
                 <>
@@ -108,8 +113,8 @@ export default function DatabaseStatus() {
         </div>
       )}
 
-      <div className="mt-3 pt-3 border-t border-slate-700">
-        <p className="text-xs text-slate-400">
+      <div className={`mt-3 pt-3 border-t ${themeStyles.cardBorder}`}>
+        <p className={`text-xs ${themeStyles.textMuted}`}>
           Using IndexedDB for persistent storage
         </p>
       </div>

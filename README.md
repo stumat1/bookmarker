@@ -1,4 +1,4 @@
-# Bookmark Triave - Smart Bookmark Manager
+# Bookmarker - Smart Bookmark Manager
 
 A modern, elegant bookmark manager built with React, featuring robust data persistence and an intuitive user interface.
 
@@ -12,6 +12,7 @@ A modern, elegant bookmark manager built with React, featuring robust data persi
 - 💾 **Robust Persistence** - All data saved in IndexedDB, survives restarts
 - 📤 **Import/Export** - Backup and restore your bookmarks as JSON
 - 🎨 **Multiple Layouts** - Compact, Default, or Generous spacing
+- 🌓 **Light/Dark Theme** - Switch between light and dark themes
 - ↩️ **Undo Support** - Undo deletions with ease
 - 🔄 **Drag & Drop** - Move bookmarks between directories
 - ✨ **Modern UI** - Beautiful gradient design with smooth animations
@@ -153,13 +154,15 @@ See [TESTING_GUIDE.md](TESTING_GUIDE.md) for detailed testing instructions.
 
 ### Settings
 
+- **Theme** - Switch between Light and Dark themes (persisted to IndexedDB)
 - **Layout Density** - Choose Compact, Default, or Generous spacing
 - **Database Status** - View bookmark count and migration status
 
 ## 🎨 UI Features
 
 - Responsive design (mobile-friendly)
-- Beautiful gradient background
+- Light and Dark theme support with smooth transitions
+- Beautiful gradient backgrounds
 - Smooth animations and transitions
 - Loading states and error handling
 - Keyboard shortcuts
@@ -174,13 +177,15 @@ bookmarker/
 │   │   ├── ErrorBoundary.jsx
 │   │   └── DatabaseStatus.jsx
 │   ├── contexts/
-│   │   └── LayoutContext.jsx
+│   │   ├── LayoutContext.jsx      # Layout density state
+│   │   └── ThemeContext.jsx       # Theme state (light/dark)
 │   ├── pages/
 │   │   ├── BookmarkManager.jsx
 │   │   └── Settings.jsx
 │   ├── utils/
 │   │   ├── db.js                  # IndexedDB utilities
-│   │   ├── layoutUtils.js
+│   │   ├── layoutUtils.js         # Layout density styles
+│   │   ├── themeUtils.js          # Theme color styles
 │   │   └── validation.js
 │   ├── App.jsx
 │   └── main.jsx

@@ -179,7 +179,12 @@ export const migrateFromLocalStorage = async () => {
 
     // Mark migration as complete
     await settingsDB.set("migrated", true);
-    console.log("Migration completed successfully!");
+
+    // Clear old localStorage data to free up space
+    localStorage.removeItem("bookmarks");
+    localStorage.removeItem("directories");
+    localStorage.removeItem("layoutDensity");
+    console.log("Migration completed successfully! Old localStorage data cleared.");
 
     return true;
   } catch (error) {
