@@ -38,8 +38,7 @@ export function getThemeStyles(theme) {
       buttonNeutral: "bg-slate-700/50 hover:bg-slate-600/50",
 
       // Filter button styles
-      filterActive:
-        "bg-gradient-to-r from-blue-600 to-purple-600 shadow-lg shadow-blue-500/30",
+      filterActive: "bg-blue-600",
       filterInactive: "bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600/50",
 
       // Bookmark card
@@ -135,8 +134,7 @@ export function getThemeStyles(theme) {
       buttonNeutral: "bg-slate-100 hover:bg-slate-200 text-slate-700",
 
       // Filter button styles
-      filterActive:
-        "bg-gradient-to-r from-blue-500 to-purple-500 shadow-lg shadow-blue-300/50 text-white",
+      filterActive: "bg-blue-500 text-white",
       filterInactive:
         "bg-white hover:bg-slate-50 border border-slate-200 text-slate-700",
 
