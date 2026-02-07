@@ -71,6 +71,8 @@ export default function BookmarkManager() {
   const pendingUpdates = useRef(new Set());
   const pendingDeletes = useRef(new Set());
   const knownIds = useRef(new Set());
+  // Track pending title fetches for cleanup (maps bookmarkId to AbortController and retry timer)
+  const pendingTitleFetches = useRef(new Map());
 
   // Initialize database and load data
   useEffect(() => {
@@ -181,10 +183,10 @@ export default function BookmarkManager() {
     saveDirectories();
   }, [directories, dbInitialized]);
 
-  // Clear selection when filter changes
+  // Clear selection when filter or search changes
   useEffect(() => {
     setSelectedBookmarks(new Set());
-  }, [filter]);
+  }, [filter, debouncedSearchTerm]);
 
   // Auto-clear success messages after 5 seconds
   useEffect(() => {
@@ -251,8 +253,16 @@ export default function BookmarkManager() {
 
       // Fetch page title in background (non-blocking) with retry
       const fetchTitle = async (retries = 2) => {
+        // Check if fetch was cancelled
+        const fetchData = pendingTitleFetches.current.get(bookmarkId);
+        if (!fetchData || fetchData.cancelled) {
+          pendingTitleFetches.current.delete(bookmarkId);
+          return;
+        }
+
         try {
           const controller = new AbortController();
+          fetchData.controller = controller;
           const timeoutId = setTimeout(() => controller.abort(), 8000);
 
           const response = await fetch(
@@ -286,20 +296,41 @@ export default function BookmarkManager() {
               );
             });
           }
+          // Cleanup on success
+          pendingTitleFetches.current.delete(bookmarkId);
         } catch (error) {
-          if (retries > 0) {
+          if (retries > 0 && !fetchData.cancelled) {
             console.log(`Retrying title fetch (${retries} attempts left)...`);
-            setTimeout(() => fetchTitle(retries - 1), 2000);
+            const retryTimer = setTimeout(() => fetchTitle(retries - 1), 2000);
+            fetchData.retryTimer = retryTimer;
           } else {
             console.log("Failed to fetch title:", error.message);
+            pendingTitleFetches.current.delete(bookmarkId);
           }
         }
       };
 
+      // Track this fetch operation
+      pendingTitleFetches.current.set(bookmarkId, { cancelled: false, controller: null, retryTimer: null });
       fetchTitle();
     } catch (error) {
       setErrorMessage(error.message);
       setLoading(false);
+    }
+  };
+
+  // Helper to cancel pending title fetch for a bookmark
+  const cancelPendingTitleFetch = (id) => {
+    const fetchData = pendingTitleFetches.current.get(id);
+    if (fetchData) {
+      fetchData.cancelled = true;
+      if (fetchData.controller) {
+        fetchData.controller.abort();
+      }
+      if (fetchData.retryTimer) {
+        clearTimeout(fetchData.retryTimer);
+      }
+      pendingTitleFetches.current.delete(id);
     }
   };
 
@@ -312,6 +343,8 @@ export default function BookmarkManager() {
         `Are you sure you want to delete "${bookmark.title}"? You can undo this action.`,
       )
     ) {
+      // Cancel any pending title fetch for this bookmark
+      cancelPendingTitleFetch(id);
       // Add to undo stack with size limit
       const newUndoStack = [
         ...undoStack.slice(-MAX_UNDO_STACK + 1),

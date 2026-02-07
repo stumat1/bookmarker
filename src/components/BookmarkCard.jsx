@@ -234,9 +234,9 @@ export default function BookmarkCard({
 
           {bookmark.tags.length > 0 && (
             <div className={`flex ${layout.tagGap} mb-4 flex-wrap`}>
-              {bookmark.tags.map((tag, i) => (
+              {bookmark.tags.map((tag) => (
                 <span
-                  key={i}
+                  key={tag}
                   className={`flex items-center gap-1.5 ${layout.tagSize} font-medium ${themeStyles.tagBackground} ${layout.tagPadding} rounded-full border ${themeStyles.tagBorder}`}
                 >
                   <Tag className="w-3 h-3" />
