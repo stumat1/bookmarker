@@ -75,10 +75,25 @@ export const bookmarkDB = {
 
 // Directory operations
 export const directoryDB = {
-  // Get all directories
+  // Get all directories (deduplicated)
   async getAll() {
     const dirs = await db.directories.toArray();
-    return dirs.map((d) => d.name);
+    const seen = new Set();
+    const duplicateIds = [];
+    const uniqueNames = [];
+    for (const d of dirs) {
+      if (seen.has(d.name)) {
+        duplicateIds.push(d.id);
+      } else {
+        seen.add(d.name);
+        uniqueNames.push(d.name);
+      }
+    }
+    // Clean up any duplicate records from the DB
+    if (duplicateIds.length > 0) {
+      await db.directories.bulkDelete(duplicateIds);
+    }
+    return uniqueNames;
   },
 
   // Add a new directory
