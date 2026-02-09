@@ -1,28 +1,26 @@
 # Bookmarker - Smart Bookmark Manager
 
-A modern, elegant bookmark manager built with React, featuring robust data persistence and an intuitive user interface.
+A modern, privacy-focused bookmark manager built with React, featuring robust data persistence and an intuitive user interface. 100% client-side with no accounts or servers.
 
-## ✨ Features
+## Features
 
-- 📑 **Smart Bookmark Management** - Add, edit, organize, and search bookmarks with ease
-- 🗂️ **Custom Directories** - Organize bookmarks into custom folders
-- 🏷️ **Tagging System** - Tag bookmarks for better organization
-- 🔍 **Powerful Search** - Search across titles, URLs, and tags
-- 📦 **Archive System** - Archive bookmarks to keep your list clean
-- 💾 **Robust Persistence** - All data saved in IndexedDB, survives restarts
-- 📤 **Import/Export** - Backup and restore your bookmarks as JSON
-- 🎨 **Multiple Layouts** - Compact, Default, or Generous spacing
-- 🌓 **Light/Dark Theme** - Switch between light and dark themes
-- ↩️ **Undo Support** - Undo deletions with ease
-- 🔄 **Drag & Drop** - Move bookmarks between directories
-- ✨ **Modern UI** - Beautiful gradient design with smooth animations
-- 📜 **Legal & Compliance Features** - Includes Privacy Policy, Terms of Service, and a Cookie Consent mechanism.
+- **Smart Bookmark Management** - Add, edit, organize, and search bookmarks with ease
+- **Custom Directories** - Organize bookmarks into custom folders
+- **Tagging System** - Tag bookmarks for better organization
+- **Powerful Search** - Search across titles, URLs, and tags
+- **Archive System** - Archive bookmarks to keep your list clean
+- **Robust Persistence** - All data saved in IndexedDB, survives restarts
+- **Import/Export** - Backup and restore your bookmarks as JSON
+- **Multiple Layouts** - Compact, Default, or Generous spacing
+- **Light/Dark Theme** - Switch between light and dark themes
+- **Undo Support** - Undo deletions with ease
+- **Drag & Drop** - Move bookmarks between directories
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
-- Node.js 16+ and npm
+- Node.js 18+ and npm
 
 ### Installation
 
@@ -42,7 +40,7 @@ npm run build
 
 The app will be available at `http://localhost:5173`
 
-## 💾 Data Persistence
+## Data Persistence
 
 This app uses **IndexedDB** with **Dexie.js** for robust, scalable data persistence:
 
@@ -55,29 +53,14 @@ This app uses **IndexedDB** with **Dexie.js** for robust, scalable data persiste
 ### Viewing Your Data
 
 1. Open Browser DevTools (F12)
-2. Go to "Application" → "IndexedDB" → "BookmarkerDB"
+2. Go to "Application" > "IndexedDB" > "BookmarkerDB"
 3. View your bookmarks, directories, and settings in real-time
 
-## 📖 Documentation
+## Documentation
 
-### For Users
+See [claude.md](claude.md) for project-specific coding guidelines and conventions.
 
-- [**USER_GUIDE.md**](USER_GUIDE.md) - Complete user guide with tips and tricks
-- [**QUICK_START.md**](QUICK_START.md) - Quick reference guide
-
-### For Developers
-
-- [**DATABASE_IMPLEMENTATION.md**](DATABASE_IMPLEMENTATION.md) - Technical details of the IndexedDB implementation
-- [**TESTING_GUIDE.md**](TESTING_GUIDE.md) - Comprehensive testing procedures
-- [**IMPLEMENTATION_SUMMARY.md**](IMPLEMENTATION_SUMMARY.md) - Overview of persistence features
-- [**DEPLOYMENT.md**](DEPLOYMENT.md) - Production deployment guide
-
-### Project Information
-
-- [**CHANGELOG.md**](CHANGELOG.md) - Version history and changes
-- [**HIGH_PRIORITY_FEATURES.md**](HIGH_PRIORITY_FEATURES.md) - Implemented features overview
-
-## 🧪 Testing
+## Testing
 
 ### Run Automated Tests
 
@@ -92,7 +75,7 @@ npm test -- --watch
 npm run test:ui
 ```
 
-All 51 validation tests must pass before deployment.
+All 84 tests must pass before deployment.
 
 ### Manual Testing in Browser Console
 
@@ -115,18 +98,17 @@ Or run the automated test script:
 // Copy and paste contents of test-indexeddb.js into console
 ```
 
-See [TESTING_GUIDE.md](TESTING_GUIDE.md) for detailed testing instructions.
-
-## 🛠️ Tech Stack
+## Tech Stack
 
 - **React 19** - UI library
-- **Vite** - Build tool and dev server
+- **Vite 7** - Build tool and dev server
 - **Dexie.js** - IndexedDB wrapper for data persistence
 - **Tailwind CSS 4** - Styling
 - **Lucide React** - Icon library
-- **React Router** - Navigation
+- **React Router 7** - Navigation
+- **Vitest** - Testing framework
 
-## 📱 Features in Detail
+## Features in Detail
 
 ### Bookmark Operations
 
@@ -159,55 +141,60 @@ See [TESTING_GUIDE.md](TESTING_GUIDE.md) for detailed testing instructions.
 - **Layout Density** - Choose Compact, Default, or Generous spacing
 - **Database Status** - View bookmark count and migration status
 
-## 🎨 UI Features
+## UI Features
 
-- Responsive design (mobile-friendly)
+- Responsive design
 - Light and Dark theme support with smooth transitions
-- Beautiful gradient backgrounds
 - Smooth animations and transitions
 - Loading states and error handling
-- Keyboard shortcuts
-- Accessible design
 
-## 📦 Project Structure
+## Project Structure
 
 ```
 bookmarker/
 ├── src/
 │   ├── components/
-│   │   ├── ErrorBoundary.jsx
-│   │   └── DatabaseStatus.jsx
+│   │   ├── AddBookmarkForm.jsx    # Bookmark creation form
+│   │   ├── BookmarkCard.jsx       # Individual bookmark display
+│   │   ├── DatabaseStatus.jsx     # DB connection status
+│   │   ├── DirectoryList.jsx      # Directory navigation
+│   │   └── ErrorBoundary.jsx      # Error handling wrapper
 │   ├── contexts/
 │   │   ├── LayoutContext.jsx      # Layout density state
 │   │   └── ThemeContext.jsx       # Theme state (light/dark)
 │   ├── pages/
-│   │   ├── BookmarkManager.jsx
-│   │   └── Settings.jsx
+│   │   ├── About.jsx              # About page
+│   │   ├── BookmarkManager.jsx    # Main bookmark manager
+│   │   └── Settings.jsx           # Settings page
+│   ├── test/
+│   │   ├── BookmarkManager.test.jsx
+│   │   ├── ErrorBoundary.test.jsx
+│   │   ├── Settings.test.jsx
+│   │   ├── setup.js
+│   │   ├── testUtils.jsx
+│   │   └── validation.test.js
 │   ├── utils/
 │   │   ├── db.js                  # IndexedDB utilities
+│   │   ├── errorMonitoring.js     # Global error handlers
 │   │   ├── layoutUtils.js         # Layout density styles
 │   │   ├── themeUtils.js          # Theme color styles
-│   │   └── validation.js
+│   │   └── validation.js          # Input validation
 │   ├── App.jsx
 │   └── main.jsx
 ├── public/
-├── DATABASE_IMPLEMENTATION.md
-├── TESTING_GUIDE.md
-└── IMPLEMENTATION_SUMMARY.md
+├── claude.md                      # Coding guidelines
+└── package.json
 ```
 
-## 🔒 Privacy & Security
+## Privacy & Security
 
-- **100% Local (primarily):** Your bookmark data is stored exclusively in your browser's IndexedDB and never leaves your device.
-- **Error Monitoring:** We use Sentry for error tracking and performance monitoring in production environments. Sentry is only initialized *after* you provide explicit consent via the cookie consent banner.
-- **Cookie Consent:** Implemented a cookie consent mechanism to comply with privacy regulations, giving you control over data collection for analytics and error monitoring.
-- **Privacy Policy & Terms of Service:** Dedicated pages provide clear information on data handling, terms of use, and your rights.
-- **No accounts:** No sign-up required, maintaining your anonymity.
-- **Offline:** Works completely offline.
-- **XSS Protection:** All inputs sanitized.
-- **Validated Inputs:** Comprehensive URL and data validation.
+- **100% Local** - Your bookmark data is stored exclusively in your browser's IndexedDB and never leaves your device
+- **No accounts** - No sign-up required
+- **Offline** - Works completely offline
+- **XSS Protection** - All inputs sanitized
+- **Validated Inputs** - Comprehensive URL and data validation
 
-## 🌐 Browser Support
+## Browser Support
 
 - Chrome/Edge 80+
 - Firefox 75+
@@ -216,54 +203,19 @@ bookmarker/
 
 All modern browsers with IndexedDB support.
 
-## 🚀 Production Deployment
+## Production Deployment
 
-Ready to deploy? See [DEPLOYMENT.md](DEPLOYMENT.md) for complete instructions including:
+Run `npm run build` to create an optimized production build in the `dist/` folder. Deploy to any static hosting service (Vercel, Netlify, GitHub Pages, etc.).
 
-- Build optimization
-- Hosting options (Vercel, Netlify, etc.)
-- Environment configuration
-- Error monitoring setup (Note: Sentry is initialized based on user cookie consent)
-- Performance optimization
+## Status
 
-## 📊 Status
+**Version:** 1.0.0
+**Tests:** 84 passing
 
-**Version:** 1.0.0  
-**Status:** ✅ Production Ready (with user-provided legal text)  
-**Tests:** 51 passing  
-**Build:** Optimized  
-**Documentation:** Complete
-
-## 📝 License
+## License
 
 This project is available for personal and educational use.
 
-## 🤝 Contributing
+## Contributing
 
 Contributions, issues, and feature requests are welcome!
-
-## 💡 Future Ideas
-
-- Cloud sync across devices
-- Browser extension
-- Import from browser bookmarks
-- Keyboard shortcuts
-- Clickable tags for filtering
-- Duplicate URL detection
-- Tag suggestions and autocomplete
-- Statistics and analytics
-- Bookmark thumbnails/screenshots
-- Collaborative bookmark sharing
-
----
-
-**Built with ❤️ using React and IndexedDB**
-
-## React + Vite
-
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
