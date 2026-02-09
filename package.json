@@ -13,6 +13,7 @@
     "test:coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@sentry/react": "^10.38.0",
     "dexie": "^4.2.1",
     "lucide-react": "^0.563.0",
     "react": "^19.2.0",

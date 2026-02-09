@@ -16,6 +16,7 @@ A modern, elegant bookmark manager built with React, featuring robust data persi
 - ↩️ **Undo Support** - Undo deletions with ease
 - 🔄 **Drag & Drop** - Move bookmarks between directories
 - ✨ **Modern UI** - Beautiful gradient design with smooth animations
+- 📜 **Legal & Compliance Features** - Includes Privacy Policy, Terms of Service, and a Cookie Consent mechanism.
 
 ## 🚀 Getting Started
 
@@ -197,13 +198,14 @@ bookmarker/
 
 ## 🔒 Privacy & Security
 
-- **100% Local** - All data stored locally in your browser
-- **No tracking** - No analytics or external services (unless you configure Sentry)
-- **No accounts** - No sign-up required
-- **Offline** - Works completely offline
-- **Private** - Your data never leaves your device
-- **XSS Protection** - All inputs sanitized
-- **Validated Inputs** - Comprehensive URL and data validation
+- **100% Local (primarily):** Your bookmark data is stored exclusively in your browser's IndexedDB and never leaves your device.
+- **Error Monitoring:** We use Sentry for error tracking and performance monitoring in production environments. Sentry is only initialized *after* you provide explicit consent via the cookie consent banner.
+- **Cookie Consent:** Implemented a cookie consent mechanism to comply with privacy regulations, giving you control over data collection for analytics and error monitoring.
+- **Privacy Policy & Terms of Service:** Dedicated pages provide clear information on data handling, terms of use, and your rights.
+- **No accounts:** No sign-up required, maintaining your anonymity.
+- **Offline:** Works completely offline.
+- **XSS Protection:** All inputs sanitized.
+- **Validated Inputs:** Comprehensive URL and data validation.
 
 ## 🌐 Browser Support
 
@@ -221,13 +223,13 @@ Ready to deploy? See [DEPLOYMENT.md](DEPLOYMENT.md) for complete instructions in
 - Build optimization
 - Hosting options (Vercel, Netlify, etc.)
 - Environment configuration
-- Error monitoring setup
+- Error monitoring setup (Note: Sentry is initialized based on user cookie consent)
 - Performance optimization
 
 ## 📊 Status
 
 **Version:** 1.0.0  
-**Status:** ✅ Production Ready  
+**Status:** ✅ Production Ready (with user-provided legal text)  
 **Tests:** 51 passing  
 **Build:** Optimized  
 **Documentation:** Complete

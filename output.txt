@@ -1,0 +1,5 @@
+The cookie consent facility has been completely removed. This includes:
+- Removing the CookieConsentBanner component from src/App.jsx.
+- Removing the import statements for CookieConsentBanner and initErrorMonitoring from src/App.jsx.
+- Deleting the file src/components/CookieConsentBanner.jsx.
+- Deleting the file src/utils/errorMonitoring.js.
