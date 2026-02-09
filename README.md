@@ -16,6 +16,13 @@ A modern, privacy-focused bookmark manager built with React, featuring robust da
 - **Undo Support** - Undo deletions with ease
 - **Drag & Drop** - Move bookmarks between directories
 
+## Preview Screenshots
+<img width="1064" height="552" alt="bookmarker-screenshot-1" src="https://github.com/user-attachments/assets/b43935ac-02af-4edc-aedd-3fc629886e4b" />
+
+<img width="1003" height="568" alt="bookmarker-screenshot-2" src="https://github.com/user-attachments/assets/b7baaa4b-657c-4190-a656-da2c8ec9dbcb" />
+<img width="1004" height="607" alt="bookmarker-screenshot-3" src="https://github.com/user-attachments/assets/afcfe5c4-5316-401c-8e05-2cff743fa3f5" />
+
+
 ## Getting Started
 
 ### Prerequisites
